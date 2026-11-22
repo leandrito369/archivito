@@ -2,11 +2,16 @@
   "name": "archivito",
   "private": true,
   "version": "0.3.1",
-  "description": "Visor de cartas local-first; Three.js se instala en node_modules, sin CDN.",
+  "description": "Biblioteca de recuerdos local-first con visor Three.js; build estático para Cloudflare Pages.",
   "scripts": {
-    "test:paper": "node --test tests/test_paper_math.cjs"
+    "test:paper": "node --test tests/test_paper_math.cjs",
+    "build:pages": "node scripts/build-pages.mjs",
+    "test:pages": "node --test tests/test_pages_build.mjs"
   },
   "dependencies": {
     "three": "0.187.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
   }
 }
