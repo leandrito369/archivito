@@ -145,3 +145,26 @@ python -m unittest discover -s tests -v
 Los casos del visor incluyen fallback 2D, cambio de hoja y cara con imágenes ficticias y prueba WebGL si el runner admite aceleración/software rendering. Los E2E antiguos de IndexedDB, Firefox y respaldos siguen activos.
 
 **Pendientes posteriores:** escenas Three.js más expresivas, mejora del espesor y bordes curvos, animación de giro controlada, alternativa accesible con teclado, medición de rendimiento móvil, y fijar un `package-lock.json` antes de una distribución reproducible formal.
+
+## Respaldo cifrado v4 (0.4A.1, PR experimental)
+
+Desde la biblioteca elegí **Respaldo cifrado v4** (o abrí `/app/respaldo-v4.html` en el mismo origen `localhost:8000`).
+
+**Exportar:** ingresá una frase de contraseña de al menos 12 caracteres, repetila y elegí **Generar archivo cifrado**. Se crea un archivo `.archivito` con toda la biblioteca (fotos originales, derivados, hojas y metadatos), protegido mediante AES-256-GCM. La clave se deriva localmente con PBKDF2-HMAC-SHA256, sal aleatoria de 32 bytes y 600.000 iteraciones; cada exportación usa un IV aleatorio de 12 bytes. Los parámetros públicos y el ciphertext integran una cabecera autenticada (AAD).
+
+**Restaurar:** recomendación expresa: usá un **perfil nuevo de Firefox/Chrome** para comprobar que el backup se puede abrir. Seleccioná el archivo y escribí su contraseña. Antes de escribir en IndexedDB, la app descifra, autentica, reconstruye el contenido y compara los hashes SHA-256 de cada fotografía original y derivada. Se añade en una sola transacción; **si algún ID ya existe, se cancela todo** y no se sobrescriben recuerdos.
+
+**Compatibilidad:** continúa disponible la exportación/importación heredada JSON v3 (sin cifrar) desde la biblioteca. La página de respaldo protegido importa **solamente v4 cifrado**; no se altera ni migra la base IndexedDB existente.
+
+**Limitaciones y seguridad:**
+- No hay sincronización con nube ni envío de datos. Esto **no equivale** a cifrado de extremo a extremo para dos cuentas.
+- Perder la contraseña hace imposible recuperar ese respaldo. Conservala aparte de la copia cifrada; usá una frase difícil de adivinar y preferí un gestor de contraseñas.
+- La versión inicial prepara el respaldo completo en memoria; limita el contenido a 160 MB y el archivo a 250 MB. Para colecciones grandes habrá que agregar una exportación por streaming.
+- Una copia cifrada no reemplaza guardar las fotos originales fuera del navegador. Verificá la restauración periódicamente.
+- Evitá publicar respaldos, incluso cifrados, en el repositorio público; el nombre de archivo y tamaño pueden revelar información.
+- No admite combinar automáticamente un respaldo v4 con recuerdos preexistentes: esa UX de resolución de conflictos corresponde a 0.4A.2.
+- Los hashes forman parte del manifiesto **dentro del backup cifrado**, no se agregan todavía a cada registro local de IndexedDB.
+
+**Pruebas:** `python -m unittest discover -s tests -v` ejecuta tests con imágenes sintéticas en Chromium y Firefox: exportación cifrada, no aparición de fotos/notas en texto claro, contraseña errónea, alteración del ciphertext, restauración byte a byte de ambas caras y derivado, importación duplicada bloqueada sin sobreescritura.
+
+Referencias: [Web Crypto AES-GCM](https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/encrypt), [PBKDF2](https://developer.mozilla.org/en-US/docs/Web/API/SubtleCrypto/deriveKey), [OWASP recomendaciones PBKDF2](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html).
