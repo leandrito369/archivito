@@ -6,7 +6,9 @@
 - **Decisión anterior:** [ADR-0001: local-first](ADR-0001-local-first.md)
 - **Plan vigente:** [ADR-0003](ADR-0003-cloudflare-supabase.md) y [Plan de acceso web compartido](../PLAN_ACCESO_WEB_COMPARTIDO.md)
 
-**Nota histórica:** este documento conserva las hipótesis anteriores para trazabilidad. La arquitectura vigente propuesta utiliza **Cloudflare Pages + Supabase Free**, no Firebase.\n\n## Contexto
+**Nota histórica:** este documento conserva las hipótesis anteriores para trazabilidad. La arquitectura vigente propuesta utiliza **Cloudflare Pages + Supabase Free**, no Firebase.
+
+## Contexto
 
 Actualmente Archivito corre en localhost, con los datos guardados exclusivamente en IndexedDB en el navegador. El visor Three.js 0.3B.1 ya está integrado en `main`, pero no existe servicio remoto. Abrir un enlace desde otro teléfono o PC, otra cuenta o incluso otra URL no da acceso al mismo IndexedDB.
 
