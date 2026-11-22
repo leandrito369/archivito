@@ -185,6 +185,28 @@ class ExistingPagesTest(unittest.TestCase):
         latest=self.extract_record(self.page)
         self.assertEqual(latest["pages"][0]["back"],current["pages"][0]["back"])
 
+    def test_reprocesar_frente_sin_modificar_original_ni_reverso(self):
+        self.add_letter(include_back=True)
+        before=self.extract_record(self.page)
+        self.page.locator("#collection .tile").click()
+        self.page.locator("#capture-front").click()
+        expect(self.page.locator("#capture-target-info")).to_contain_text("hoja 1/1 · frente")
+        expect(self.page.locator("#file")).to_be_hidden()
+        self.page.locator("#process").click()
+        expect(self.page.locator("#save-archive")).to_be_enabled(timeout=20000)
+        self.page.locator("#save-archive").click()
+        expect(self.page.locator("#status")).to_contain_text("Digitalización vinculada",timeout=20000)
+        self.page.goto(self.base)
+        self.page.wait_for_function("typeof db!=='undefined' && db!==null")
+        after=self.extract_record(self.page)
+        self.assertEqual(after["id"],before["id"])
+        self.assertEqual(after["note"],before["note"])
+        self.assertEqual(after["pages"][0]["front"],before["pages"][0]["front"])
+        self.assertEqual(after["pages"][0]["back"],before["pages"][0]["back"])
+        self.assertIsNotNone(after["pages"][0]["frontDerived"])
+        self.assertIsNone(after["pages"][0]["backDerived"])
+        self.assertEqual(after["pages"][0]["frontCrop"]["algorithm"],"homography-js-v1")
+
     def test_frente_existente_y_conflicto_con_otra_pestana(self):
         self.add_letter(include_back=True)
         before=self.extract_record(self.page)
