@@ -1,0 +1,45 @@
+name: Navegador local (IndexedDB real)
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  browser-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Preparar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Instalar dependencias de prueba
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Instalar Chromium para Playwright
+        run: python -m playwright install --with-deps chromium
+
+      - name: Validar JavaScript del HTML
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          source = Path("app/index.html").read_text(encoding="utf-8")
+          assert source.count("<script>") == 1 and source.count("</script>") == 1
+          Path("/tmp/archivito-inline.js").write_text(
+              source.split("<script>", 1)[1].split("</script>", 1)[0],
+              encoding="utf-8",
+          )
+          PY
+          node --check /tmp/archivito-inline.js
+
+      - name: Probar persistencia y respaldo en navegador real
+        run: python -m unittest discover -s tests -v
