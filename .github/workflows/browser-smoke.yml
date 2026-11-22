@@ -41,5 +41,8 @@ jobs:
           PY
           node --check /tmp/archivito-inline.js
 
+      - name: Probar homografía y recorte matemático
+        run: node --test tests/test_perspective.cjs
+
       - name: Probar persistencia y respaldo en navegador real
         run: python -m unittest discover -s tests -v

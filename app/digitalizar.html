@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Digitalizar una carta — Archivito (0.3A)</title>
+  <style>
+    :root{color-scheme:dark;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#161310;color:#eee5d8}
+    *{box-sizing:border-box}
+    [hidden]{display:none!important}
+    body{margin:0;min-height:100vh;background:radial-gradient(circle at 10% 0%,#33281d 0,transparent 34%),#161310}
+    .shell{width:min(1220px,95vw);margin:auto;padding:28px 0 42px}
+    header{display:flex;justify-content:space-between;align-items:center;gap:20px;flex-wrap:wrap}
+    .tag{font-size:12px;letter-spacing:.15em;text-transform:uppercase;color:#c8a780}
+    h1{font-size:clamp(1.8rem,3.5vw,2.7rem);letter-spacing:-.04em;margin:.25em 0}
+    p{color:#c6b8a7;line-height:1.55;margin:.5em 0}
+    a{color:#e9cfaf}button,.button{font:inherit;cursor:pointer;border-radius:12px;padding:11px 15px;transition:background .15s}
+    .button{display:inline-flex;text-decoration:none;border:1px solid #67513e;background:#2b241e;color:#eee5d8}
+    button{border:1px solid #78604b;color:#eee5d8;background:#352b24}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    button.primary{background:#b38c64;color:#19130e;border-color:#b38c64;font-weight:750}
+    button:focus-visible,input:focus-visible,.point:focus-visible{outline:3px solid #f5c88f;outline-offset:3px}
+    .lede{max-width:800px;margin:14px 0 22px}
+    .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#221c17;border:1px solid #433528;border-radius:16px;padding:14px;margin:15px 0}
+    .toolbar input[type=file]{max-width:100%;width:min(350px,100%);font:inherit;color:#e8dccb}
+    .status{font-size:13px;color:#d6c2a5}
+    .work{display:grid;grid-template-columns:1fr 1fr;gap:17px}
+    .panel{background:#231d18;border:1px solid #4b3d2f;border-radius:18px;min-height:250px;padding:17px}
+    .panel h2{font-size:1rem;margin:0 0 6px}
+    .panel p{font-size:.88rem;margin-bottom:12px}
+    .workarea{position:relative;margin:10px auto;width:min(100%,600px);touch-action:none}
+    #photo{width:100%;height:auto;display:block;background:#3d342d;border-radius:8px;box-shadow:0 12px 40px #0007}
+    .point{position:absolute;z-index:2;width:27px;height:27px;padding:0;display:grid;place-items:center;border:3px solid #fff5d7;background:#b36e3e;color:#fff;font-size:11px;transform:translate(-50%,-50%);border-radius:50%;box-shadow:0 2px 8px #0009;touch-action:none}
+    .point:focus-visible{outline-offset:3px}
+    .workarea:not(.active) .point{display:none}
+    .line{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+    .line polygon{fill:#dca36822;stroke:#fff2bb;stroke-width:1;stroke-dasharray:2 1;vector-effect:non-scaling-stroke}
+    .placeholder{min-height:200px;display:grid;place-items:center;padding:25px;text-align:center;color:#a99988;background:#1b1713;border-radius:10px}
+    #result{max-width:100%;max-height:650px;display:none;margin:auto;box-shadow:0 12px 35px #0008;background:#e9d7b9}
+    .readme{font-size:13px;color:#af9a86;margin-top:22px;padding:16px;border:1px solid #55412e;border-radius:12px}
+    .readme strong{color:#f2d5ac}
+    @media (max-width:780px){.work{grid-template-columns:1fr}.shell{padding:18px 0}header{align-items:flex-start}}
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <div>
+        <div class="tag">Archivito · Laboratorio 0.3A.1</div>
+        <h1>Digitalizar una carta</h1>
+      </div>
+      <a class="button" href="./">← Volver a la biblioteca</a>
+    </header>
+    <p class="lede">Cargá una fotografía del papel, mové las <strong>cuatro esquinas</strong> hasta los vértices reales de la hoja y creá una versión enderezada. Todo se procesa <strong>en tu navegador</strong>, sin enviar fotos a ningún servidor.</p>
+    <div class="toolbar">
+      <label for="file">Fotografía original</label>
+      <input id="file" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+      <button id="reset" disabled>Reiniciar esquinas</button>
+      <button id="process" class="primary" disabled>Enderezar carta</button>
+      <button id="export" disabled>Descargar PNG corregido</button>
+    </div>
+    <div class="status" id="status" role="status" aria-live="polite">Primero elegí una imagen JPEG, PNG, WebP o GIF (máx. 35 MB).</div>
+    <div class="work">
+      <section class="panel" aria-label="Fotografía original">
+        <h2>1. Fotografía original</h2>
+        <p>Arrastrá los puntos en orden: superior izquierdo, superior derecho, inferior derecho, inferior izquierdo. Con el teclado, usá las flechas para mover un punto seleccionado (Mayús: paso grande).</p>
+        <div class="placeholder" id="initial">Acá se mostrará la fotografía del papel.</div>
+        <div class="workarea" id="workarea" hidden>
+          <canvas id="photo" aria-label="Fotografía original"></canvas>
+          <svg class="line" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><polygon id="polygon" points=""></polygon></svg>
+          <button class="point" type="button" aria-label="Esquina superior izquierda" data-i="0">1</button>
+          <button class="point" type="button" aria-label="Esquina superior derecha" data-i="1">2</button>
+          <button class="point" type="button" aria-label="Esquina inferior derecha" data-i="2">3</button>
+          <button class="point" type="button" aria-label="Esquina inferior izquierda" data-i="3">4</button>
+        </div>
+      </section>
+      <section class="panel" aria-label="Resultado digitalizado">
+        <h2>2. Papel enderezado</h2>
+        <p>Vista previa de la transformación. El archivo que descargás es una copia derivada; el original no se modifica.</p>
+        <div class="placeholder" id="empty-result">El resultado aparecerá después de hacer clic en «Enderezar carta».</div>
+        <canvas id="result" aria-label="Carta enderezada"></canvas>
+      </section>
+    </div>
+    <div class="readme">
+      <strong>Importante:</strong> esta es una prueba técnica de captura asistida. La imagen procesada no se incorpora todavía automáticamente a la biblioteca. Descargá el PNG y, si querés, agregalo como una nueva hoja en Archivito. Conservá tu fotografía original y hacé respaldos de la colección. El proceso utiliza una homografía implementada en JavaScript local; la integración OpenCV.js y los originales/derivados vinculados son próximos pasos.
+    </div>
+  </main>
+  <script src="./perspective.js"></script>
+  <script>
+    "use strict";
+    const $ = selector => document.querySelector(selector);
+    const area = $("#workarea"), photo = $("#photo"), result = $("#result");
+    const buttons = Array.from(document.querySelectorAll(".point"));
+    const defaults = () => [
+      {x: .07, y: .07}, {x: .93, y: .07}, {x: .93, y: .93}, {x: .07, y: .93}
+    ];
+    let points = defaults(), original = null, active = null;
+
+    function setStatus(text, error = false) {
+      $("#status").textContent = text;
+      $("#status").style.color = error ? "#f5a6a6" : "#d6c2a5";
+    }
+    function setPoints() {
+      buttons.forEach((btn, i) => {
+        btn.style.left = (100 * points[i].x) + "%";
+        btn.style.top = (100 * points[i].y) + "%";
+      });
+      $("#polygon").setAttribute("points", points.map(p => (100 * p.x) + "," + (100 * p.y)).join(" "));
+      const valid = ArchivitoPerspective.valid(points);
+      $("#process").disabled = !original || !valid;
+      if (!valid && original) setStatus("Las esquinas se cruzan o forman un área demasiado pequeña. Ajustalas.", true);
+    }
+    function coords(event) {
+      const rect = photo.getBoundingClientRect();
+      return {x: Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width)),
+              y: Math.max(0, Math.min(1, (event.clientY - rect.top) / rect.height))};
+    }
+    buttons.forEach(btn => {
+      const i = Number(btn.dataset.i);
+      btn.addEventListener("pointerdown", event => {
+        if (!original) return;
+        active = {id: event.pointerId, i};
+        btn.setPointerCapture(event.pointerId);
+        points[i] = coords(event);
+        setPoints();
+      });
+      btn.addEventListener("pointermove", event => {
+        if (!active || active.i !== i || active.id !== event.pointerId) return;
+        points[i] = coords(event);
+        setPoints();
+      });
+      const stop = () => {active = null;};
+      btn.addEventListener("pointerup", stop);
+      btn.addEventListener("pointercancel", stop);
+      btn.addEventListener("lostpointercapture", stop);
+      btn.addEventListener("keydown", event => {
+        const step = event.shiftKey ? .02 : .005;
+        const movement = {ArrowUp:[0,-step],ArrowDown:[0,step],ArrowLeft:[-step,0],ArrowRight:[step,0]}[event.key];
+        if (!movement) return;
+        event.preventDefault();
+        points[i].x = Math.max(0, Math.min(1, points[i].x + movement[0]));
+        points[i].y = Math.max(0, Math.min(1, points[i].y + movement[1]));
+        setPoints();
+      });
+    });
+    $("#reset").addEventListener("click", () => {
+      points = defaults(); setPoints(); setStatus("Esquinas reiniciadas. Ubicalas en los bordes reales del papel.");
+    });
+
+    $("#file").addEventListener("change", async event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      original = null;
+      $("#process").disabled = $("#reset").disabled = $("#export").disabled = true;
+      result.style.display = "none"; $("#empty-result").hidden = false;
+      if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type) ||
+          file.size > 35 * 1024 * 1024) {
+        setStatus("Formato no admitido o imagen mayor que 35 MB.", true); return;
+      }
+      let bitmap;
+      try {
+        bitmap = await createImageBitmap(file);
+        const scale = Math.min(1, 2400 / Math.max(bitmap.width, bitmap.height));
+        photo.width = Math.max(2, Math.round(bitmap.width * scale));
+        photo.height = Math.max(2, Math.round(bitmap.height * scale));
+        photo.getContext("2d", {willReadFrequently:true}).drawImage(bitmap,0,0,photo.width,photo.height);
+        bitmap.close();
+        // Sólo se guarda una referencia temporal al File sin modificar: nunca al servidor.
+        original = file;
+        $("#initial").hidden = true; area.hidden = false; area.classList.add("active");
+        $("#reset").disabled = false;
+        points = defaults(); setPoints();
+        setStatus("Fotografía cargada. Ajustá las esquinas y elegí «Enderezar carta».");
+      } catch (error) {
+        if (bitmap && typeof bitmap.close === "function") bitmap.close();
+        setStatus("No se pudo abrir la fotografía: " + error.message, true);
+      }
+    });
+
+    $("#process").addEventListener("click", () => {
+      if (!original || !ArchivitoPerspective.valid(points)) return;
+      const button = $("#process"); button.disabled = true;
+      setStatus("Procesando en el dispositivo…");
+      // Ceder un frame para que la UI muestre el estado antes del cálculo CPU.
+      requestAnimationFrame(() => setTimeout(() => {
+        try {
+          const context = photo.getContext("2d", {willReadFrequently:true});
+          const pixels = context.getImageData(0,0,photo.width,photo.height);
+          const transformed = ArchivitoPerspective.rectify(pixels, points, 1600);
+          result.width = transformed.width; result.height = transformed.height;
+          result.getContext("2d").putImageData(
+            new ImageData(transformed.data, transformed.width, transformed.height),0,0
+          );
+          $("#empty-result").hidden = true; result.style.display = "block";
+          $("#export").disabled = false;
+          setStatus("Vista previa creada (" + result.width + " × " + result.height + " px). El original permanece intacto.");
+        } catch (error) {
+          setStatus("No se pudo enderezar: " + error.message, true);
+        } finally {button.disabled = !ArchivitoPerspective.valid(points);}
+      }, 0));
+    });
+
+    $("#export").addEventListener("click", () => {
+      if (!original || !result.width) return;
+      result.toBlob(blob => {
+        if (!blob) {setStatus("No se pudo exportar PNG.", true); return;}
+        const url = URL.createObjectURL(blob), a = document.createElement("a");
+        a.href = url;
+        a.download = (original.name.replace(/\.[^.]+$/,"").replace(/[^a-z0-9._-]/gi,"-") || "carta") + "-digitalizada.png";
+        document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
+        setStatus("PNG derivado descargado. Conservá también el archivo original.");
+      }, "image/png");
+    });
+  </script>
+</body>
+</html>

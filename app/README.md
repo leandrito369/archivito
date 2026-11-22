@@ -46,3 +46,16 @@ El navegador ejecutado dentro del entorno de creación de este PR puede impedir 
 ## Aviso de privacidad
 
 El repositorio es público. **No subas cartas reales, respaldos JSON ni fotografías personales** a GitHub. Usá exclusivamente datos ficticios en tests, commits, capturas e issues.
+
+## Laboratorio de digitalización asistida (0.3A.1, experimental)
+
+Abrí `http://localhost:8000/app/digitalizar.html` o usá el botón **Digitalizar foto** en la biblioteca.
+
+1. Seleccioná una foto de una carta tomada desde arriba (JPEG/PNG/WebP/GIF, hasta 35 MB).
+2. Ajustá manualmente las cuatro esquinas (en sentido horario, desde arriba a la izquierda). Se pueden mover con mouse, tacto o flechas del teclado, y Mayús acelera el movimiento.
+3. Pulsá **Enderezar carta** para generar una vista previa rectificada.
+4. Descargá el PNG generado y, si querés, cargalo **manualmente** en una hoja de la biblioteca.
+
+**Alcance actual:** usa homografía en JavaScript local, sin dependencia CDN, no hay detección automática de esquinas ni integración con OpenCV.js todavía. El procesamiento limita el origen a 2400 px en su lado mayor y la salida a 1600 px; no reemplaza el archivo original, que sólo permanece en memoria durante la sesión. Las cartas ya guardadas en IndexedDB **no son tocadas ni migradas** por el laboratorio. No enviar fotos a repositorios públicos. El próximo corte debe almacenar el original y su derivado vinculado en la biblioteca con esquema versionado y respaldos compatibles.
+
+Para probar el algoritmo: `node --test tests/test_perspective.cjs`. Las pruebas E2E en `tests/test_digitalizacion.py` prueban la carga, el recorte, la descarga y la ausencia de escrituras en IndexedDB.
