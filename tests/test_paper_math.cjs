@@ -3,7 +3,7 @@ const test=require("node:test");
 const assert=require("node:assert/strict");
 const p=require("../app/paper-math.js");
 test("las dimensiones del papel respetan proporciones con límites",()=>{
- assert.equal(p.dimensions(300,400).width,1.8);
+ assert.ok(Math.abs(p.dimensions(300,400).width-1.8)<1e-9);
  assert.equal(p.dimensions(400,300).height,2.4);
  assert.equal(p.dimensions(500,500).ratio,1);
  assert.throws(()=>p.dimensions(0,300));
