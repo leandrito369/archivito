@@ -1,0 +1,2 @@
+# Solo dependencias de desarrollo / pruebas E2E.
+playwright==1.57.0
