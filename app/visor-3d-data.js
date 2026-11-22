@@ -13,6 +13,7 @@ function chosen(p,face){return derived&&p[face+"Derived"] instanceof Blob?p[face
 function update(){
  if(!item)return;
  const p=pages[index];
+ $("#return-link").href="./index.html?recuerdo="+encodeURIComponent(id)+"&hoja="+index;
  $("#page-position").textContent="Hoja "+(index+1)+" / "+pages.length;
  $("#prev").disabled=index===0;$("#next").disabled=index===pages.length-1;
  $("#front").classList.toggle("active",side==="front");
