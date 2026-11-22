@@ -49,6 +49,8 @@ jobs:
           node --check app/paper-math.js
           node --check app/visor-3d-data.js
           node --check app/visor-three.js
+          node --check app/crypto-v4.js
+          node --check app/backup-v4.js
           python - <<'PY'
           from pathlib import Path
           source = Path("app/digitalizar.html").read_text(encoding="utf-8")
