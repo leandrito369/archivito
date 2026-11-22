@@ -151,13 +151,13 @@ class BrowserIntegrationTests(unittest.TestCase):
         self.page.locator('[data-view="timeline"]').click()
         self.assertIn("2026", self.page.locator("#timeline").inner_text())
 
-    def test_exportacion_importacion_v2_con_bytes_identicos(self):
+    def test_exportacion_importacion_v3_con_bytes_identicos(self):
         hashes = self.create_two_page_letter()
         with self.page.expect_download() as download_info:
             self.page.locator("#backup-export").click()
         backup = Path(download_info.value.path()).read_bytes()
         parsed = json.loads(backup)
-        self.assertEqual(parsed["format"], "nuestro-archivo-v2")
+        self.assertEqual(parsed["format"], "nuestro-archivo-v3")
         self.assertEqual(len(parsed["records"][0]["pages"]), 2)
 
         # Contexto nuevo: la IndexedDB inicial está vacía.
