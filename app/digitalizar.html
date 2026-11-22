@@ -47,7 +47,7 @@
   <main class="shell">
     <header>
       <div>
-        <div class="tag">Archivito · Laboratorio 0.3A.1</div>
+        <div class="tag">Archivito · Captura asistida 0.3A.2</div>
         <h1>Digitalizar una carta</h1>
       </div>
       <a class="button" href="./">← Volver a la biblioteca</a>
@@ -59,6 +59,8 @@
       <button id="reset" disabled>Reiniciar esquinas</button>
       <button id="process" class="primary" disabled>Enderezar carta</button>
       <button id="export" disabled>Descargar PNG corregido</button>
+      <label for="rec-title">Título</label><input id="rec-title" type="text" maxlength="120" placeholder="Nueva carta" aria-label="Título del recuerdo" style="min-width:170px;border-radius:9px;padding:10px;background:#18130f;color:#f5e8d8;border:1px solid #78604b">
+      <button id="save-archive" class="primary" disabled>Guardar nueva carta</button>
     </div>
     <div class="status" id="status" role="status" aria-live="polite">Primero elegí una imagen JPEG, PNG, WebP o GIF (máx. 35 MB).</div>
     <div class="work">
@@ -83,7 +85,7 @@
       </section>
     </div>
     <div class="readme">
-      <strong>Importante:</strong> esta es una prueba técnica de captura asistida. La imagen procesada no se incorpora todavía automáticamente a la biblioteca. Descargá el PNG y, si querés, agregalo como una nueva hoja en Archivito. Conservá tu fotografía original y hacé respaldos de la colección. El proceso utiliza una homografía implementada en JavaScript local; la integración OpenCV.js y los originales/derivados vinculados son próximos pasos.
+      <strong>Importante:</strong> esta es una prueba técnica de captura asistida. Podés guardar la fotografía original y su copia enderezada vinculadas en <strong>una carta nueva</strong> dentro de la biblioteca, o descargar el PNG. Esta opción no reemplaza ni modifica cartas existentes. Conservá tu fotografía original y hacé respaldos de la colección. El proceso utiliza una homografía implementada en JavaScript local. Los respaldos v3 incluyen tanto original como derivado; no están cifrados. La detección automática de bordes y OpenCV.js quedan para una versión posterior.
     </div>
   </main>
   <script src="./perspective.js"></script>
@@ -95,7 +97,7 @@
     const defaults = () => [
       {x: .07, y: .07}, {x: .93, y: .07}, {x: .93, y: .93}, {x: .07, y: .93}
     ];
-    let points = defaults(), original = null, active = null;
+    let points = defaults(), original = null, active = null, processedPoints = null;
 
     function setStatus(text, error = false) {
       $("#status").textContent = text;
@@ -108,6 +110,8 @@
       });
       $("#polygon").setAttribute("points", points.map(p => (100 * p.x) + "," + (100 * p.y)).join(" "));
       const valid = ArchivitoPerspective.valid(points);
+      processedPoints=null;
+      $("#save-archive").disabled = true; $("#export").disabled = true;
       $("#process").disabled = !original || !valid;
       if (!valid && original) setStatus("Las esquinas se cruzan o forman un área demasiado pequeña. Ajustalas.", true);
     }
@@ -145,14 +149,14 @@
       });
     });
     $("#reset").addEventListener("click", () => {
-      points = defaults(); setPoints(); setStatus("Esquinas reiniciadas. Ubicalas en los bordes reales del papel.");
+      processedPoints=null;points = defaults(); setPoints(); setStatus("Esquinas reiniciadas. Ubicalas en los bordes reales del papel.");
     });
 
     $("#file").addEventListener("change", async event => {
       const file = event.target.files?.[0];
       if (!file) return;
-      original = null;
-      $("#process").disabled = $("#reset").disabled = $("#export").disabled = true;
+      original = null;processedPoints=null;
+      $("#process").disabled = $("#reset").disabled = $("#export").disabled = $("#save-archive").disabled = true;
       result.style.display = "none"; $("#empty-result").hidden = false;
       if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type) ||
           file.size > 35 * 1024 * 1024) {
@@ -193,7 +197,7 @@
             new ImageData(transformed.data, transformed.width, transformed.height),0,0
           );
           $("#empty-result").hidden = true; result.style.display = "block";
-          $("#export").disabled = false;
+          processedPoints=points.map(p=>({...p}));$("#export").disabled = false;$("#save-archive").disabled = false;
           setStatus("Vista previa creada (" + result.width + " × " + result.height + " px). El original permanece intacto.");
         } catch (error) {
           setStatus("No se pudo enderezar: " + error.message, true);
@@ -201,6 +205,67 @@
       }, 0));
     });
 
+    function canvasBlob(canvas,mime="image/png",quality) {
+      return new Promise((resolve,reject)=>canvas.toBlob(b=>b?resolve(b):reject(Error("No se pudo generar una imagen.")),mime,quality));
+    }
+    function thumbBlob() {
+      const canvas=document.createElement("canvas");
+      const scale=Math.min(1,540/Math.max(result.width,result.height));
+      canvas.width=Math.max(1,Math.round(result.width*scale));
+      canvas.height=Math.max(1,Math.round(result.height*scale));
+      canvas.getContext("2d").drawImage(result,0,0,canvas.width,canvas.height);
+      return canvasBlob(canvas,"image/jpeg",.78);
+    }
+    function persistNewRecord(record) {
+      return new Promise((resolve,reject) => {
+        const open=indexedDB.open("nuestro-archivo-cartas-v1",1);
+        open.onupgradeneeded=()=>{if(!open.result.objectStoreNames.contains("letters"))open.result.createObjectStore("letters",{keyPath:"id"});};
+        open.onerror=()=>reject(open.error);
+        open.onsuccess=()=>{
+          const db=open.result;
+          try {
+            const t=db.transaction("letters","readwrite");
+            t.objectStore("letters").add(record); // add, never replace an existing recuerdo
+            t.oncomplete=()=>{db.close();resolve();};
+            t.onerror=()=>{const err=t.error;db.close();reject(err);};
+            t.onabort=()=>{const err=t.error;db.close();reject(err||Error("Transacción abortada"));};
+          } catch(e) {db.close();reject(e);}
+        };
+      });
+    }
+    $("#save-archive").addEventListener("click",async()=>{
+      const button=$("#save-archive");
+      if(button.disabled||!original||!processedPoints)return;
+      button.disabled=true;setStatus("Guardando carta y fotografía original en este navegador…");
+      try{
+        const derived=await canvasBlob(result),thumb=await thumbBlob();
+        const now=new Date().toISOString();
+        const id=(crypto.randomUUID?crypto.randomUUID():("rec-"+Date.now()+"-"+Math.random().toString(36).slice(2)));
+        const page={
+          id:"p-"+id,caption:"",front:original,back:null,thumb,
+          frontDerived:derived,backDerived:null,
+          frontCrop:{algorithm:"homography-js-v1",points:processedPoints.map(p=>({...p})),
+            input:{width:photo.width,height:photo.height},
+            output:{width:result.width,height:result.height},createdAt:now},
+          backCrop:null
+        };
+        const record={
+          id,schemaVersion:3,title:$("#rec-title").value.trim().slice(0,120)||
+            original.name.replace(/\.[^.]+$/,"").slice(0,120)||"Carta digitalizada",
+          kind:"letter",date:"",from:"",to:"",tags:[],note:"",favorite:false,
+          createdAt:now,updatedAt:now,pages:[page],
+          front:original,back:null,thumb
+        };
+        await persistNewRecord(record);
+        setStatus("Carta guardada en la biblioteca local con original y derivado. Exportá un respaldo v3.");
+        button.textContent="Guardada ✓";
+        $("#rec-title").disabled=true;
+      }catch(error){
+        console.error(error);
+        setStatus("No se pudo guardar: "+error.message,true);
+        button.disabled=false;
+      }
+    });
     $("#export").addEventListener("click", () => {
       if (!original || !result.width) return;
       result.toBlob(blob => {
