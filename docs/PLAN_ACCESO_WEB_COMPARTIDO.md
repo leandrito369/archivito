@@ -1,158 +1,119 @@
-# Plan de entrega — Archivito web privado para dos personas
+# Plan de ejecución — Archivito web compartido y gratuito
 
-**Propuesta:** 22/11/2026 · **Estado:** diseño y backlog, **no desplegado**.
+**Decisión adoptada:** 22/11/2026 · **Stack:** Cloudflare Pages Free + Supabase Free · **Estado:** pendiente de implementación y despliegue.
 
-## Resultado que buscamos
+## Objetivo
 
-Desde una sola dirección HTTPS (por ejemplo `https://NOMBRE-DEL-PROYECTO.web.app`), dos personas distintas pueden entrar con **sus propias cuentas de Google**, subir una carta desde el celular o la PC, navegar en el visor 2D/3D y verla sincronizada en el dispositivo de la otra persona. Sólo esos dos usuarios están autorizados.
+Dos personas con sus propias cuentas Google pueden entrar por una **misma URL HTTPS** desde celulares o PC, guardar recuerdos desde cualquier lugar y visualizarlos en biblioteca 2D/3D compartida. Las cartas, fotos y metadatos privados sólo serán legibles por los dos miembros autorizados que posean la clave del archivo.
 
-El acceso por Google significa **Google Sign-In**, no que las cartas se indexan en Google Search, ni que hay que compartir una contraseña. El código del sitio puede servirse públicamente; **las fotos, notas y metadatos sensibles se cifran y autorizan**.
+**Importante:** la aplicación actual guarda todo en IndexedDB por navegador y origen; aún no existe sincronización remota ni login. No asumir que publicar el frontend resuelve esos requisitos.
 
-## Estado actual vs estado requerido
+## Arquitectura
 
-| Capacidad | Actual (`main`) | Requerido para ambos |
+| Componente | Servicio gratuito | Función |
 |---|---|---|
-| Interfaz web y visor | Sí, desde servidor local | Hosting HTTPS |
-| Inicio de sesión Google | No | Auth y allowlist de dos UIDs |
-| Biblioteca | IndexedDB por origen y navegador | Colección remota común + caché local |
-| Originales y derivados | Blobs locales | Blobs **cifrados localmente** en Cloud Storage |
-| Metadatos | JSON/objetos locales | Firestore con contenido sensible cifrado |
-| Sincronización | No | Suscripción a cambios y cola de operaciones |
-| Uso offline | Datos locales, sin sincronización | Outbox local, reintentos y conflictos |
-| Backup | JSON v3 no cifrado | v4 protegido, autenticado y restaurable |
-| Instalación como app | No PWA | Manifest + service worker + pantalla de inicio |
-| Reglas de acceso | No, no hay backend | Firestore + Storage con deny-all inicial |
-| Compartir/revocar acceso | No | Miembros por UID, rol owner/editor, revocación |
+| Frontend HTTPS | Cloudflare Pages | Entregar HTML, CSS y JS empaquetado (Three.js incluido en el build) |
+| Identidad | Supabase Auth / Google OAuth | Identificar las dos cuentas |
+| Membresía privada | PostgreSQL + RLS | Autorizar sólo 2 UIDs; un tercero es rechazado |
+| Índice de recuerdos | Supabase Postgres | Cargar únicamente metadatos cifrados, referencias y revisiones |
+| Fotos y derivados | Supabase Storage | Bucket privado de ciphertext; rutas de assets opacas |
+| Avisos de cambios | Supabase Realtime | Notificar cambios sujetos a autorización |
+| Trabajo offline | IndexedDB | Copias, fotos y cola local de sincronización |
+| Confidencialidad | Web Crypto | Cifrar **antes** de subir; distribuir clave entre dos personas de forma segura |
+| Recuperación | Backup cifrado v4 | Exportación/restauración independiente de la nube (PR #18, aún draft) |
 
-## Fases y dependencias
+Ver [ADR-0003](decisiones/ADR-0003-cloudflare-supabase.md). La anterior [ADR-0002 Firebase](decisiones/ADR-0002-acceso-web-compartido.md) queda sustituida.
 
-### A. Seguridad y preservación (Issue #4, `0.4A.1`)
+## Fases con criterios de aceptación
 
-- [ ] Exportación cifrada y autenticada v4, compatible con v1/v2/v3 en importación.
-- [ ] Manifest SHA-256 de originales/derivados y verificación tras restauración en perfil limpio.
-- [ ] Rechazo sin escrituras ante contraseña incorrecta, corrupción o versión no admitida.
-- [ ] Gestión documentada de claves y pérdida de contraseña. **Este backup no habilita por sí solo nube compartida.**
+### 0 — Preservación 0.4A.1 (PR #18)
 
-**Criterio de aceptación:** una carta de dos hojas y ambas caras restaura byte a byte; archivo alterado no escribe nada.
+- [ ] Validar en CI el cifrado de respaldo v4: AES-GCM, derivación de clave y hashes SHA-256.
+- [ ] Restaurar backup cifrado en **un perfil distinto**, sin eliminar ni modificar originales.
+- [ ] Rechazar contraseña incorrecta, archivo manipulado y IDs ya existentes sin escritura parcial.
+- [ ] Revisar límites de memoria/backup y mecanismos de recuperación de clave.
+- [ ] Aclarar que este backup **no implementa** cifrado remoto de extremo a extremo.
 
-### B. Preparar hosting + identidad (`CLOUD-01`)
+### 1 — CLOUD-01: empaquetado web, Google Auth y autorización
 
-- [ ] Crear proyecto propio en https://console.firebase.google.com/ y registrar una app web.
-- [ ] Evaluar y activar el plan Blaze **sólo cuando el propietario apruebe facturación**; presupuesto/alertas y uso de región documentados.
-- [ ] Habilitar Google Sign-In, registrar dominios autorizados, verificar flujo móvil Safari/iOS y Android/Chrome.
-- [ ] Migrar despliegue de páginas HTML actuales a build estático repetible (por ejemplo Vite multi-page) para no publicar `node_modules` ni secretos.
-- [ ] Preparar Firebase Hosting y política de caché, HTTPS, sin exponer recursos privados en carpeta pública.
-- [ ] Crear archivo privado `archives/{archiveId}` y dos membresías explícitas por UID.
-- [ ] Reglas Firestore/Storage **deny-by-default** con pruebas en emuladores: los dos UIDs permitidos acceden; terceros y anónimos reciben rechazo.
-- [ ] Crear entornos aislados de desarrollo y producción; sin datos reales en desarrollo.
+- [ ] Compilar la aplicación en un directorio estático `dist/` con Three.js **empaquetado**: no publicar `node_modules`.
+- [ ] Probar la compilación en CI sin despliegue automático.
+- [ ] Crear **proyectos propios** Cloudflare y Supabase en los planes Free, cuando el propietario decida conectarlos.
+- [ ] Habilitar Google OAuth en Supabase y configurar callback/redirects exactos de Pages y localhost.
+- [ ] Establecer un único `archive_id` y **dos** miembros identificados por `auth.users.id`, no por emails escritos en Git.
+- [ ] Aplicar tablas, policies RLS y bucket privado mediante migración revisada; no usar service_role en el navegador.
+- [ ] Ejecutar pruebas **negativas** por API: tercero autenticado y anónimo no leen ni escriben.
+- [ ] Publicar solo fixtures sintéticos; la URL puede ser pública como código, no los recuerdos.
 
-**Criterio de aceptación:** dos cuentas distintas ingresan desde dos navegadores/ubicaciones, pueden ver una **carta ficticia**; terceros no pueden acceder por API. El código web público no implica lectura pública de datos.
+**Criterio de salida:** ambas cuentas entran, pero un tercero no puede acceder a la base ni a Storage aunque conozca la URL y la publishable key.
 
-### C. Cifrado extremo a extremo + sincronización (`CLOUD-02`)
+### 2 — CLOUD-02: clave del archivo y cifrado en navegador
 
-- [ ] Especificar keyring, recuperación, entrega segura de clave de archivo a la pareja y rotación.
-- [ ] Cifrar originales/derivados y metadatos privados **antes de subir**; no almacenar clave en servidor.
-- [ ] Crear adaptador `LocalRepository`/`CloudRepository` sin romper modelo de dominio 0.3A.
-- [ ] Subir assets cifrados con IDs aleatorios, reintentos e integridad, luego confirmar índice de metadatos.
-- [ ] Sincronizar versiones por `revision`, operaciones idempotentes, IDs estables y resolución de conflictos.
-- [ ] Estado de subida visible: `Sólo local`, `Pendiente`, `Subiendo`, `Sincronizado`, `Conflicto`, `Error`.
-- [ ] Evitar vínculos de descarga públicos/compartibles a fotos. Verificar lectura únicamente con SDK autenticado.
-- [ ] Probar dos sesiones simultáneas con pérdida/reconexión a Internet.
+- [ ] Definir clave de archivo aleatoria, forma de compartirla sin compartir contraseña Google y recuperación por ambos usuarios.
+- [ ] Cifrar antes de subir **originales, derivados, título, notas, fechas, etiquetas, remitente y destinatario**.
+- [ ] Documentar qué metadatos operativos no se pueden ocultar al proveedor (cuentas, tamaños, tiempos).
+- [ ] Cifrado autenticado con parámetros versionados; nunca subir claves en claro ni incluirlas en logs.
+- [ ] Pruebas: dos usuarios autorizados descifran; tercero o usuario sin clave no puede.
 
-**Criterio de aceptación:** usuario A sube una carta ficticia con original y derivado; usuario B la ve sin refrescar manualmente, con todos sus metadatos, y solo puede hacerlo con autorización y clave local.
+**Criterio de salida:** un ciphertext de carta sintética puede recuperarse entre dos dispositivos con el mecanismo seguro de clave; el servidor no dispone del texto o las fotos descifradas.
 
-### D. Migrar recuerdos locales y habilitar uso cotidiano (`CLOUD-03`)
+### 3 — CLOUD-03: sincronización local-first
 
-- [ ] Explicar que `localhost:8000` y `*.web.app` son orígenes distintos: **el navegador no mueve IndexedDB automáticamente**.
-- [ ] Importar backup en la nueva URL únicamente tras consentimiento de usuario, cifrado y confirmación de espacio disponible.
-- [ ] Evitar duplicados por IDs, comparar hashes y permitir revisión previa.
-- [ ] Respetar el original: si falla subida, no borrar ni modificar el dato local.
-- [ ] Instalar manifest PWA y service worker de recursos públicos; no precachear cartas sensibles.
-- [ ] Probar subida desde iPhone Safari/Chrome, Android Chrome y Firefox/Chrome en PC.
-- [ ] Comprobar que los dos usuarios pueden subir y que los cambios persisten desde cualquier lugar.
+- [ ] Repositorios local/remoto, IDs estables, cola persistente de operaciones y reintentos.
+- [ ] Subir blobs cifrados, confirmar índice sólo cuando completaron, validar hashes.
+- [ ] Descargar nuevos recuerdos sin recargar manualmente y descifrarlos localmente.
+- [ ] Marcar estado real: `Sólo local`, `Pendiente`, `Sincronizando`, `Sincronizado`, `Conflicto`.
+- [ ] Detectar revisiones incompatibles y mantener copia recuperable antes de resolver conflictos.
+- [ ] Probar simultáneamente dos navegadores, reconexión tras caída de red, borrado y cargas parciales.
 
-**Criterio de aceptación:** cada persona incorpora un recuerdo ficticio desde un dispositivo distinto, lo ve en el otro, puede leerlo offline si está disponible localmente, y el estado de sincronización no miente.
+**Criterio de salida:** usuario A sube recuerdo sintético con frente/reverso y B lo ve; B sube otro y A lo ve; tercero no tiene acceso por API ni descifra contenido.
 
-### E. Operación segura (`CLOUD-04`)
+### 4 — CLOUD-04: móvil/PWA y migración de recuerdos
 
-- [ ] Backup v4 regular y restauración de prueba incluso si se pierde una cuenta/dispositivo.
-- [ ] Protección contra borrado accidental: papelera o versiones recuperables.
-- [ ] Gestión de revocación de cuentas y pérdida de dispositivos; aclarar que archivos ya descargados no pueden des-descargarse remotamente.
-- [ ] Vigilancia de costos, errores de sincronización, cuotas y tamaño de archivos, sin telemetría de contenido.
-- [ ] Documentar cierre de sesión y eliminación de copias locales.
+- [ ] Manifest y caché estática segura para funcionar desde pantalla de inicio.
+- [ ] Captura desde cámara/galería y soporte de orientación/formato móvil.
+- [ ] Migración **explícita** desde `localhost:8000` a `https://<nombre>.pages.dev`: no comparten IndexedDB.
+- [ ] Importar backup con comprobación de integridad y confirmación; no eliminar origen local hasta verificar nube + recuperación.
+- [ ] Validar en Safari iPhone, Chrome Android, Firefox/Chrome PC.
+- [ ] Documentar restauración tras pausa del proyecto Free de Supabase.
 
-## Experiencia en el celular y en PC
+**Criterio de salida:** ambos pueden usar Archivito desde cualquier lugar; una desconexión deja operaciones pendientes, no falsamente completadas.
 
-1. Abrir el mismo enlace `https://…web.app` en Chrome/Firefox/Safari.
-2. Pulsar **Entrar con Google**. Cada persona usa su propia cuenta.
-3. Si está autorizado, abrir el archivo compartido; si no, mostrar **Acceso restringido**.
-4. Pulsar **Nueva carta** y fotografiar o adjuntar frente y reverso desde la cámara/galería.
-5. Recortar o enderezar, guardar y consultar un indicador de sincronización.
-6. La otra persona ve la carta una vez sincronizada y puede abrirla en 2D/3D.
-7. Opcional: añadir Archivito a pantalla de inicio como PWA, sin obligación de instalar desde Play Store/App Store.
+## Modelo de permisos propuesto
 
-**Condición importante:** la app puede cargar una fotografía mientras no hay Internet y dejarla en la cola local, pero la otra persona **no la verá** hasta que el dispositivo remitente consiga subirla.
+- Supabase Auth permite iniciar sesión a usuarios de Google: eso sólo prueba identidad.
+- `archive_members` establece pertenencia y rol `owner` o `editor`; **ningún cliente puede autoañadirse**.
+- Policies RLS limitan `archives`, `archive_members` y `memories` a miembros de ese archivo.
+- Policies de `storage.objects` limitan las rutas `<archive_id>/<asset_uuid>` y el bucket debe ser privado.
+- Ningún usuario tiene permiso de conceder acceso a terceros desde la API pública.
+- **NUNCA** usar `service_role`, Google OAuth Client Secret ni claves de archivo dentro de páginas publicadas.
 
-## Arquitectura de datos y orden de subida
+## Condiciones económicas
 
-```mermaid
-sequenceDiagram
- participant U as Usuario A
- participant L as Archivito / IndexedDB
- participant E as Cifrado cliente
- participant S as Firebase Storage
- participant F as Firestore
- participant V as Usuario B
- U->>L: Captura y guarda original + derivado
- L->>E: Prepara blobs y metadatos
- E->>S: Sube fotografías cifradas
- S-->>L: Confirma subida
- E->>F: Guarda manifiesto cifrado y revisión
- F-->>V: Cambio en el índice autorizado
- V->>F: Descarga manifiesto
- V->>S: Descarga blobs cifrados
- V->>V: Verifica integridad + descifra con clave compartida
-```
+El objetivo es **USD 0**, no una promesa de disponibilidad o capacidad ilimitada. En noviembre 2026 Supabase Free incluye aprox. 500 MB de base, 1 GB de Storage y 5 GB de salida no cacheada, con posible pausa por inactividad; Cloudflare Pages Free tiene límites mensuales de compilaciones. Vigilar cambios y no superar cuotas; **no activar servicios pagos automáticamente**.
 
-El proceso no es una transacción única de Firestore y Storage: se necesitan **estados de upload, idempotencia, limpieza de huérfanos y reintentos**.
+## Gestión del repositorio
 
-## Política de acceso inicial (estrictamente dos personas)
+- La rama `main` y los recuerdos reales no se modifican sin PR revisado.
+- No subir fotos, backups, emails, UID de ambos usuarios, secretos o credenciales al repositorio público.
+- Un PR técnico por corte: build Pages, Auth/permissions, cifrado compartido, sync, PWA.
+- Pruebas con fixtures sintéticos y estados de CI verdes antes de cada merge.
 
-- El dueño administra `archiveId` y dos documentos de membresía `memberUid`.
-- El segundo usuario tiene permisos de lectura/alta/edición. Para borrado compartido, exigir papelera y/o rol propietario al principio.
-- Crear las membresías mediante una operación administrativa autenticada segura. **No** permitir que una persona se añada a sí misma escribiendo `/members/{suUID}`.
-- La consola Firebase y las cuentas administradoras de la nube deben tratarse por separado de la membresía de la app.
-- Las reglas deben controlar también el acceso a fotografías; no basta ocultar botones en la interfaz.
+## Dependencias
 
-## Decisiones que requieren intervención del propietario
+- [Issue #13](https://github.com/leandrito369/archivito/issues/13): Hosting Cloudflare Pages + Google OAuth + RLS.
+- [Issue #14](https://github.com/leandrito369/archivito/issues/14): clave y cifrado cliente.
+- [Issue #15](https://github.com/leandrito369/archivito/issues/15): sincronización bidireccional.
+- [Issue #16](https://github.com/leandrito369/archivito/issues/16): PWA/migración.
+- [Issue #4](https://github.com/leandrito369/archivito/issues/4): backup cifrado v4.
 
-1. Crear y poseer el proyecto Firebase, aceptar o no Blaze y configurar la facturación; no enviar datos bancarios al chat.
-2. Conectar la integración Firebase si quiere que ChatGPT pueda intervenir en configuración/despliegue desde el servicio.
-3. Elegir las dos cuentas Google mediante el flujo real de autenticación: usar **UIDs** internamente; no publicar correos personales en el repositorio.
-4. Aprobar cómo compartir y recuperar la clave de cifrado entre ambos.
+## Referencias
 
-## Consideraciones de costo y privacidad
+- Cloudflare Pages: https://developers.cloudflare.com/pages/get-started/git-integration/
+- Configuración de compilación: https://developers.cloudflare.com/pages/configuration/build-configuration/
+- Supabase Free: https://supabase.com/pricing
+- Google Auth: https://supabase.com/docs/guides/auth/social-sign-in/auth-google
+- RLS: https://supabase.com/docs/guides/database/postgres/row-level-security
+- Storage: https://supabase.com/docs/guides/storage/security/access-control
 
-Firebase Cloud Storage requiere Blaze en 2026 (pago por uso); existen cuotas gratuitas según producto y ubicación. **Las alertas de presupuesto no equivalen a un límite de cargos**. Estimar después de medir volumen real.
-
-El Firebase Web SDK almacena y sincroniza documentos Firestore cuando está configurado para offline; las fotografías en Cloud Storage requieren una lógica propia de subida/caché. Evitar usar enlaces públicos descargables con tokens persistentes.
-
-El sistema local actual sigue funcionando sin migración automática. **No subir cartas personales a la nube durante el desarrollo**, sólo fixtures sintéticos.
-
-## Enlaces oficiales de referencia
-
-- Firebase Console: https://console.firebase.google.com/
-- Google Sign-In: https://firebase.google.com/docs/auth/web/google-signin
-- Firebase Hosting: https://firebase.google.com/docs/hosting/quickstart
-- Persistencia offline Firestore: https://firebase.google.com/docs/firestore/manage-data/enable-offline
-- Firestore Security Rules: https://firebase.google.com/docs/firestore/security/rules-conditions
-- Cloud Storage Rules y Firestore: https://firebase.google.com/docs/storage/security/rules-conditions
-- Facturación Storage: https://firebase.google.com/docs/storage/faqs-storage-changes-announced-sept-2024
-- Alertas y límites de facturación: https://firebase.google.com/docs/projects/billing/avoid-surprise-bills
-
-## Gobernanza
-
-- Un PR por fase, sin tocar datos reales de producción o desplegar automáticamente.
-- Commits nuevos, no reescritura de historia.
-- CI con emuladores y pruebas negativas de permisos, tests de cifrado y restauración; aprobar/merge sólo tras verificaciones.
-- Documentar cada migración IndexedDB y contar con respaldo v4 restaurado en perfil limpio.
+**Este plan no es una afirmación de que las cuentas, la base ni el sitio ya estén creados.**
