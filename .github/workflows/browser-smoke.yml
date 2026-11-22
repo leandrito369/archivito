@@ -41,6 +41,7 @@ jobs:
           PY
           node --check /tmp/archivito-inline.js
           node --check app/archive-v3.js
+          node --check app/capture-existing.js
           node --check app/perspective.js
           python - <<'PY'
           from pathlib import Path
