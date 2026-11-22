@@ -113,7 +113,7 @@ Desde la **carpeta raíz del repositorio** (donde están \`package.json\` y \`ap
 
 \`\`\`powershell
 npm install
-py -m http.server 8000
+py -m http.server 8000 --bind 127.0.0.1
 \`\`\`
 
 Abrí \`http://localhost:8000/app/\`, elegí una carta y pulsá **Abrir visor 3D**. Si el 3D no puede iniciarse (WebGL ausente, dependencia sin instalar), seguirá disponible una **vista 2D** que muestra frente/reverso y permite navegar por las hojas. El visor 0.3A anterior sigue disponible en la biblioteca; el nuevo no lo reemplaza.
