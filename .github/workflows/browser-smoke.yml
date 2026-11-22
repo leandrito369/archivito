@@ -28,6 +28,9 @@ jobs:
       - name: Instalar Chromium para Playwright
         run: python -m playwright install --with-deps chromium firefox
 
+      - name: Instalar Three.js local para visor 0.3B.1
+        run: npm install --ignore-scripts --no-audit --no-fund
+
       - name: Validar JavaScript del HTML
         run: |
           python - <<'PY'
@@ -43,6 +46,9 @@ jobs:
           node --check app/archive-v3.js
           node --check app/capture-existing.js
           node --check app/perspective.js
+          node --check app/paper-math.js
+          node --check app/visor-3d-data.js
+          node --check app/visor-three.js
           python - <<'PY'
           from pathlib import Path
           source = Path("app/digitalizar.html").read_text(encoding="utf-8")
@@ -56,6 +62,9 @@ jobs:
 
       - name: Probar homografía y recorte matemático
         run: node --test tests/test_perspective.cjs
+
+      - name: Probar geometría del papel
+        run: node --test tests/test_paper_math.cjs
 
       - name: Probar persistencia y respaldo en navegador real
         run: python -m unittest discover -s tests -v
