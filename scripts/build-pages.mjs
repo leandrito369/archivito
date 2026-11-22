@@ -1,0 +1,81 @@
+// Archivito — compilación acotada para Cloudflare Pages.
+// No copia imágenes privadas, backups, claves ni node_modules.
+// Uso: npm install && npm run build:pages
+import { copyFile, mkdir, readFile, rm, stat, writeFile, readdir } from "node:fs/promises";
+import { resolve, dirname, join, extname } from "node:path";
+import { fileURLToPath } from "node:url";
+import { build } from "esbuild";
+
+const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const src = join(repo, "app"), destination = join(repo, "dist");
+const appOut = join(destination, "app");
+
+// Lista explícita: ningún archivo inesperado dentro de app/ se publica.
+const publicFiles = [
+  "index.html", "digitalizar.html", "visor-3d.html",
+  "archive-v3.js", "capture-existing.js", "paper-math.js",
+  "perspective.js", "visor-3d-data.js",
+  "respaldo-v4.html", "crypto-v4.js", "backup-v4.js"
+];
+const mandatory = ["index.html", "digitalizar.html", "visor-3d.html"];
+async function exists(path) { try { return (await stat(path)).isFile(); } catch { return false; } }
+
+async function main() {
+  await rm(destination, { recursive: true, force: true });
+  await mkdir(appOut, { recursive: true });
+  for (const name of publicFiles) {
+    const input = join(src, name);
+    if (!(await exists(input))) {
+      if (mandatory.includes(name)) throw Error("Archivo obligatorio faltante: " + name);
+      continue;
+    }
+    if (![".html", ".js"].includes(extname(name))) throw Error("Extensión no permitida: " + name);
+    await copyFile(input, join(appOut, name));
+  }
+
+  // Única entrada ESM que importa paquetes. Se crea un bundle autónomo.
+  await build({
+    entryPoints: [join(src, "visor-three.js")],
+    outfile: join(appOut, "visor-three.js"),
+    bundle: true,
+    platform: "browser",
+    format: "esm",
+    target: "es2022",
+    minify: true,
+    sourcemap: false,
+    legalComments: "none",
+    logLevel: "warning"
+  });
+
+  const visorFile = join(appOut, "visor-3d.html");
+  const html = await readFile(visorFile, "utf8");
+  const pattern = /<script type="importmap">[\s\S]*?<\/script>/;
+  if (!pattern.test(html)) throw Error("Falta el importmap a reemplazar.");
+  await writeFile(visorFile, html.replace(pattern,
+    "<!-- Three.js está integrado en visor-three.js. -->"), "utf8");
+
+  const landing = [
+    '<!doctype html><html lang="es"><head><meta charset="utf-8">',
+    '<meta name="viewport" content="width=device-width,initial-scale=1">',
+    '<meta http-equiv="refresh" content="0;url=/app/index.html">',
+    '<title>Archivito</title></head><body>',
+    '<p><a href="/app/index.html">Abrir Archivito</a></p></body></html>'
+  ].join("\n");
+  await writeFile(join(destination, "index.html"), landing, "utf8");
+
+  const headers = [
+    "/*",
+    "  X-Content-Type-Options: nosniff",
+    "  X-Frame-Options: DENY",
+    "  Referrer-Policy: strict-origin-when-cross-origin",
+    "  Permissions-Policy: geolocation=(), microphone=()"
+  ].join("\n");
+  await writeFile(join(destination, "_headers"), headers, "utf8");
+
+  const files = await readdir(appOut);
+  if (files.some(name => !publicFiles.includes(name) && name !== "visor-three.js"))
+    throw Error("Archivo no permitido en dist/app.");
+  console.log("Archivito Pages: build estático en dist/ (" + files.length + " archivos).");
+}
+
+await main();
