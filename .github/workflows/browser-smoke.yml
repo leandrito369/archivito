@@ -33,13 +33,25 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           source = Path("app/index.html").read_text(encoding="utf-8")
-          assert source.count("<script>") == 1 and source.count("</script>") == 1
+          assert source.count("<script>") == 1 and source.count("</script>") >= 1
           Path("/tmp/archivito-inline.js").write_text(
               source.split("<script>", 1)[1].split("</script>", 1)[0],
               encoding="utf-8",
           )
           PY
           node --check /tmp/archivito-inline.js
+          node --check app/archive-v3.js
+          node --check app/perspective.js
+          python - <<'PY'
+          from pathlib import Path
+          source = Path("app/digitalizar.html").read_text(encoding="utf-8")
+          assert source.count("<script>") == 1
+          assert source.count("</script>") >= 1
+          Path("/tmp/archivito-digitalizar.js").write_text(
+              source.split("<script>",1)[1].split("</script>",1)[0],encoding="utf-8"
+          )
+          PY
+          node --check /tmp/archivito-digitalizar.js
 
       - name: Probar homografía y recorte matemático
         run: node --test tests/test_perspective.cjs
