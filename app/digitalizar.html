@@ -47,15 +47,17 @@
   <main class="shell">
     <header>
       <div>
-        <div class="tag">Archivito · Captura asistida 0.3A.2</div>
+        <div class="tag">Archivito · Captura asistida 0.3A.3</div>
         <h1>Digitalizar una carta</h1>
       </div>
       <a class="button" href="./">← Volver a la biblioteca</a>
     </header>
     <p class="lede">Cargá una fotografía del papel, mové las <strong>cuatro esquinas</strong> hasta los vértices reales de la hoja y creá una versión enderezada. Todo se procesa <strong>en tu navegador</strong>, sin enviar fotos a ningún servidor.</p>
+    <div class="readme" id="capture-target" hidden style="margin:14px 0" aria-live="polite"><strong>Destino seleccionado:</strong> <span id="capture-target-info"></span></div>
     <div class="toolbar">
-      <label for="file">Fotografía original</label>
+      <label id="file-label" for="file">Fotografía original</label>
       <input id="file" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+      <span id="existing-image-hint" hidden style="color:#f0d3ab;font-size:14px">Se usa la foto original ya guardada; no se reemplazará.</span>
       <button id="reset" disabled>Reiniciar esquinas</button>
       <button id="process" class="primary" disabled>Enderezar carta</button>
       <button id="export" disabled>Descargar PNG corregido</button>
@@ -85,10 +87,12 @@
       </section>
     </div>
     <div class="readme">
-      <strong>Importante:</strong> esta es una prueba técnica de captura asistida. Podés guardar la fotografía original y su copia enderezada vinculadas en <strong>una carta nueva</strong> dentro de la biblioteca, o descargar el PNG. Esta opción no reemplaza ni modifica cartas existentes. Conservá tu fotografía original y hacé respaldos de la colección. El proceso utiliza una homografía implementada en JavaScript local. Los respaldos v3 incluyen tanto original como derivado; no están cifrados. La detección automática de bordes y OpenCV.js quedan para una versión posterior.
+      <strong>Importante:</strong> esta es una prueba técnica de captura asistida. Podés guardar la fotografía original y su copia enderezada vinculadas en <strong>una carta nueva</strong> dentro de la biblioteca, o descargar el PNG. Si accedés desde el visor de una carta existente, se actualizará <strong>únicamente el derivado de la cara seleccionada</strong>. Si todavía no fotografiaste el reverso, podés agregar su foto original una sola vez. Conservá tu fotografía original y hacé respaldos de la colección. El proceso utiliza una homografía implementada en JavaScript local. Los respaldos v3 incluyen tanto original como derivado; no están cifrados. La detección automática de bordes y OpenCV.js quedan para una versión posterior.
     </div>
   </main>
   <script src="./perspective.js"></script>
+  <script src="./archive-v3.js"></script>
+  <script src="./capture-existing.js"></script>
   <script>
     "use strict";
     const $ = selector => document.querySelector(selector);
@@ -97,7 +101,7 @@
     const defaults = () => [
       {x: .07, y: .07}, {x: .93, y: .07}, {x: .93, y: .93}, {x: .07, y: .93}
     ];
-    let points = defaults(), original = null, active = null, processedPoints = null;
+    let points = defaults(), original = null, active = null, processedPoints = null, existingTarget = null, invalidTarget = false, savedExisting = false;
 
     function setStatus(text, error = false) {
       $("#status").textContent = text;
@@ -152,34 +156,38 @@
       processedPoints=null;points = defaults(); setPoints(); setStatus("Esquinas reiniciadas. Ubicalas en los bordes reales del papel.");
     });
 
-    $("#file").addEventListener("change", async event => {
-      const file = event.target.files?.[0];
-      if (!file) return;
-      original = null;processedPoints=null;$("#rec-title").disabled=false;$("#save-archive").textContent="Guardar nueva carta";
+    async function loadPhoto(file) {
+      if (!file || invalidTarget || savedExisting) return;
+      original = null;processedPoints=null;
+      $("#save-archive").textContent = existingTarget ? "Guardar esta cara" : "Guardar nueva carta";
+      $("#rec-title").disabled = !!existingTarget;
       $("#process").disabled = $("#reset").disabled = $("#export").disabled = $("#save-archive").disabled = true;
       result.style.display = "none"; $("#empty-result").hidden = false;
       if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type) ||
-          file.size > 35 * 1024 * 1024) {
-        setStatus("Formato no admitido o imagen mayor que 35 MB.", true); return;
+          file.size > 35 * 1024 * 1024 || file.size===0) {
+        setStatus("Formato no admitido o fotografía mayor que 35 MB.", true); return;
       }
       let bitmap;
       try {
-        bitmap = await createImageBitmap(file);
-        const scale = Math.min(1, 2400 / Math.max(bitmap.width, bitmap.height));
-        photo.width = Math.max(2, Math.round(bitmap.width * scale));
-        photo.height = Math.max(2, Math.round(bitmap.height * scale));
-        photo.getContext("2d", {willReadFrequently:true}).drawImage(bitmap,0,0,photo.width,photo.height);
-        bitmap.close();
-        // Sólo se guarda una referencia temporal al File sin modificar: nunca al servidor.
-        original = file;
-        $("#initial").hidden = true; area.hidden = false; area.classList.add("active");
-        $("#reset").disabled = false;
-        points = defaults(); setPoints();
-        setStatus("Fotografía cargada. Ajustá las esquinas y elegí «Enderezar carta».");
-      } catch (error) {
-        if (bitmap && typeof bitmap.close === "function") bitmap.close();
-        setStatus("No se pudo abrir la fotografía: " + error.message, true);
+        bitmap=await createImageBitmap(file);
+        const scale=Math.min(1,2400/Math.max(bitmap.width,bitmap.height));
+        photo.width=Math.max(2,Math.round(bitmap.width*scale));
+        photo.height=Math.max(2,Math.round(bitmap.height*scale));
+        photo.getContext("2d",{willReadFrequently:true}).drawImage(bitmap,0,0,photo.width,photo.height);
+        bitmap.close();bitmap=null;
+        original=file;
+        $("#initial").hidden=true;area.hidden=false;area.classList.add("active");
+        $("#reset").disabled=false;
+        points=defaults();setPoints();
+        setStatus("Fotografía cargada. Ajustá los cuatro puntos y pulsá «Enderezar carta».");
+      }catch(error){
+        if(bitmap&&typeof bitmap.close==="function")bitmap.close();
+        setStatus("No se pudo abrir la fotografía: "+error.message,true);
       }
+    }
+    $("#file").addEventListener("change", async event=>{
+      const file=event.target.files?.[0];
+      if(file)await loadPhoto(file);
     });
 
     $("#process").addEventListener("click", () => {
@@ -238,7 +246,24 @@
       if(button.disabled||!original||!processedPoints)return;
       button.disabled=true;setStatus("Guardando carta y fotografía original en este navegador…");
       try{
-        const derived=await canvasBlob(result),thumb=await thumbBlob();
+        const derived=await canvasBlob(result);
+        if(existingTarget){
+          const crop=ArchivitoCaptureExisting.cropMeta(processedPoints,photo,result);
+          const thumb=existingTarget.target.side==="front"?await thumbBlob():null;
+          await ArchivitoCaptureExisting.save({
+            target:existingTarget.target,
+            expectedUpdatedAt:existingTarget.expectedUpdatedAt,
+            derived,crop,thumb,
+            newBackOriginal:existingTarget.original?null:original
+          });
+          savedExisting=true;
+          button.textContent="Guardada ✓";
+          $("#process").disabled=true;$("#reset").disabled=true;$("#file").disabled=true;
+          $("#rec-title").disabled=true;
+          setStatus("Digitalización vinculada a la hoja y cara seleccionadas. El original sigue intacto. Volvé a la biblioteca y exportá un respaldo v3.");
+          return;
+        }
+        const thumb=await thumbBlob();
         const now=new Date().toISOString();
         const id=(crypto.randomUUID?crypto.randomUUID():("rec-"+Date.now()+"-"+Math.random().toString(36).slice(2)));
         const page={
@@ -266,6 +291,40 @@
         button.disabled=false;
       }
     });
+    async function initializeContext() {
+      try {
+        const query=ArchivitoCaptureExisting.parseQuery(window.location.search);
+        if(!query)return;
+        $("#capture-target").hidden=false;
+        $("#capture-target-info").textContent="Cargando hoja desde la biblioteca…";
+        $("#file").disabled=true;
+        const snapshot=await ArchivitoCaptureExisting.load(query);
+        existingTarget=snapshot;
+        $("#rec-title").value=snapshot.title;$("#rec-title").disabled=true;
+        $("#save-archive").textContent="Guardar esta cara";
+        const face=query.side==="front"?"frente":"reverso";
+        $("#capture-target-info").textContent=snapshot.title+" · hoja "+(snapshot.pageIndex+1)+"/"+snapshot.totalPages+" · "+face;
+        if(snapshot.original){
+          $("#file-label").hidden=true;$("#file").hidden=true;
+          $("#existing-image-hint").hidden=false;
+          await loadPhoto(snapshot.original);
+        }else{
+          // Sólo el reverso puede carecer de original.
+          $("#file-label").textContent="Fotografía original del reverso";
+          $("#file").disabled=false;
+          setStatus("Este reverso no tiene foto. Subí una y se guardará como original junto al recorte.");
+        }
+      }catch(error){
+        invalidTarget=true;
+        $("#file").disabled=true;$("#reset").disabled=true;
+        $("#process").disabled=true;$("#save-archive").disabled=true;
+        $("#capture-target").hidden=false;
+        $("#capture-target-info").textContent="No se puede abrir el destino";
+        setStatus(error.message,true);
+      }
+    }
+    initializeContext();
+
     $("#export").addEventListener("click", () => {
       if (!original || !result.width) return;
       result.toBlob(blob => {

@@ -83,3 +83,21 @@ El laboratorio `app/digitalizar.html` ahora permite **Guardar nueva carta** desd
 `python -m unittest discover -s tests -v` cubre persistencia real, compatibilidad v1/v2/v3, original y derivado con SHA-256, importación atómica ante archivo inválido y regresión del visor. `node --test tests/test_perspective.cjs` verifica la geometría.
 
 **Limitación de diseño:** los activos original/derivado siguen embebidos en cada página del registro para preservar el esquema físico actual. La separación en stores independientes con migración explícita es trabajo futuro y no se declara implementada.
+
+## Captura sobre cartas existentes — 0.3A.3 (PR apilado)
+
+En la biblioteca abrí una carta existente y elegí la hoja que querés corregir. Desde **Digitalizar esta hoja**, usá:
+
+- **Digitalizar frente:** abre la fotografía original ya guardada de ese frente. No permite reemplazarla por otra foto desde esta pantalla.
+- **Digitalizar reverso:** si ya existe una fotografía original, la reutiliza sin reemplazarla. Si el reverso está vacío, primero permite cargar una foto original y después genera su recorte derivado.
+- Ajustá las cuatro esquinas, pulsá **Enderezar carta** y después **Guardar esta cara**.
+
+La operación sólo modifica el **derivado y los parámetros de recorte de esa cara**. Si el reverso no tenía foto, también agrega ese archivo como original. No toca los frentes, los demás reversos, otras hojas ni otros recuerdos. Se conserva el mismo ID, título, notas y demás metadatos de la carta. Para evitar pérdidas de edición por pestañas simultáneas, el guardado se rechaza si cambió `updatedAt` desde que abriste la digitalización.
+
+La base sigue siendo IndexedDB `nuestro-archivo-cartas-v1` / `letters`. Los respaldos v3 exportan originales, derivados y parámetros de ambas caras; se importan v1, v2 y v3. No hay cambios destructivos de esquema ni escritura masiva sobre cartas antiguas.
+
+**Antes de probar:** exportá un respaldo JSON v3 de tus recuerdos actuales desde el **mismo Firefox y origen (`localhost:8000`)**. Conservá una copia fuera del proyecto. Si cargás el proyecto desde otro puerto, host, protocolo o perfil, el navegador tendrá un almacenamiento separado. El JSON no está cifrado; no lo compartas ni lo subas al repositorio público.
+
+**Limitaciones:** la homografía es manual, todavía no hay detector automático de bordes, OpenCV.js ni visor Three.js. Para reemplazar fotografías originales de caras ya archivadas, usá el editor general: eso **invalida** el recorte anterior y exige regenerarlo. La captura contextual evita reemplazos accidentales.
+
+**Pruebas:** `python -m unittest discover -s tests -v` incluye casos de varias hojas, reversos ya presentes o faltantes, original preservado, respaldo/restore v3, y conflicto con otra pestaña. `node --check app/capture-existing.js` verifica sintaxis del módulo.
