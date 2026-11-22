@@ -105,18 +105,18 @@ La base sigue siendo IndexedDB `nuestro-archivo-cartas-v1` / `letters`. Los resp
 
 ## Visor físico 0.3B.1 — experimento Three.js local
 
-Este primer visor 3D usa Three.js **instalado en el proyecto** (versión exacta fijada en \`package.json\`) y nunca lo descarga desde un CDN cuando abrís la aplicación. Las fotos proceden exclusivamente de IndexedDB y sólo se procesan en tu navegador. La hoja se aproxima mediante dos superficies diferentes, leve grosor, curvatura e iluminación. **No reconstruye las arrugas ni el relieve real de una carta.**
+Este primer visor 3D usa Three.js **instalado en el proyecto** (versión exacta fijada en `package.json`) y nunca lo descarga desde un CDN cuando abrís la aplicación. Las fotos proceden exclusivamente de IndexedDB y sólo se procesan en tu navegador. La hoja se aproxima mediante dos superficies diferentes, leve grosor, curvatura e iluminación. **No reconstruye las arrugas ni el relieve real de una carta.**
 
 ### Preparación en Windows (PowerShell)
 
-Desde la **carpeta raíz del repositorio** (donde están \`package.json\` y \`app/\`):
+Desde la **carpeta raíz del repositorio** (donde están `package.json` y `app/`):
 
-\`\`\`powershell
+```powershell
 npm install
 py -m http.server 8000 --bind 127.0.0.1
-\`\`\`
+```
 
-Abrí \`http://localhost:8000/app/\`, elegí una carta y pulsá **Abrir visor 3D**. Si el 3D no puede iniciarse (WebGL ausente, dependencia sin instalar), seguirá disponible una **vista 2D** que muestra frente/reverso y permite navegar por las hojas. El visor 0.3A anterior sigue disponible en la biblioteca; el nuevo no lo reemplaza.
+Abrí `http://localhost:8000/app/`, elegí una carta y pulsá **Abrir visor 3D**. Si el 3D no puede iniciarse (WebGL ausente, dependencia sin instalar), seguirá disponible una **vista 2D** que muestra frente/reverso y permite navegar por las hojas. El visor 0.3A anterior sigue disponible en la biblioteca; el nuevo no lo reemplaza.
 
 ### Funciones 0.3B.1
 
@@ -129,19 +129,19 @@ Abrí \`http://localhost:8000/app/\`, elegí una carta y pulsá **Abrir visor 3D
 
 ### Privacidad y almacenamiento
 
-- \`app/visor-3d.html\` realiza **sólo lecturas** en la misma base \`nuestro-archivo-cartas-v1/letters\`; no altera ni migra recuerdos.
+- `app/visor-3d.html` realiza **sólo lecturas** en la misma base `nuestro-archivo-cartas-v1/letters`; no altera ni migra recuerdos.
 - Instalar npm requiere acceso a Internet **una sola vez**. La navegación posterior se ejecuta localmente, sin dependencias CDN.
-- No subas \`node_modules/\`, cartas reales ni respaldos JSON al repositorio público.
+- No subas `node_modules/`, cartas reales ni respaldos JSON al repositorio público.
 - Si cambiás de host, protocolo, puerto o perfil, IndexedDB cambia de origen; los recuerdos previos pueden no aparecer.
 
 ### Pruebas automatizadas
 
-\`\`\`powershell
+```powershell
 npm install
 node --test tests/test_paper_math.cjs
 python -m unittest discover -s tests -v
-\`\`\`
+```
 
 Los casos del visor incluyen fallback 2D, cambio de hoja y cara con imágenes ficticias y prueba WebGL si el runner admite aceleración/software rendering. Los E2E antiguos de IndexedDB, Firefox y respaldos siguen activos.
 
-**Pendientes posteriores:** escenas Three.js más expresivas, mejora del espesor y bordes curvos, animación de giro controlada, alternativa accesible con teclado, medición de rendimiento móvil, y fijar un \`package-lock.json\` antes de una distribución reproducible formal.
+**Pendientes posteriores:** escenas Three.js más expresivas, mejora del espesor y bordes curvos, animación de giro controlada, alternativa accesible con teclado, medición de rendimiento móvil, y fijar un `package-lock.json` antes de una distribución reproducible formal.
