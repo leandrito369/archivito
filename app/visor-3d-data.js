@@ -57,6 +57,7 @@ async function redraw(){
 async function enable3D(){
  if(!flat||!item||closed)return;
  if(force2d){report("Modo 2D forzado. Abrí esta página sin modo=2d para usar WebGL.");return;}
+ if(viewer){flat=false;update();await redraw();return;}
  try{
    report("Iniciando Three.js desde node_modules...");
    threeModule??=await import("./visor-three.js");
