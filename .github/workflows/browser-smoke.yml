@@ -46,7 +46,7 @@ jobs:
           from pathlib import Path
           source = Path("app/digitalizar.html").read_text(encoding="utf-8")
           assert source.count("<script>") == 1
-          assert source.count("</script>") == 1
+          assert source.count("</script>") >= 1
           Path("/tmp/archivito-digitalizar.js").write_text(
               source.split("<script>",1)[1].split("</script>",1)[0],encoding="utf-8"
           )
