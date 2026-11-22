@@ -59,3 +59,27 @@ Abrí `http://localhost:8000/app/digitalizar.html` o usá el botón **Digitaliza
 **Alcance actual:** usa homografía en JavaScript local, sin dependencia CDN, no hay detección automática de esquinas ni integración con OpenCV.js todavía. El procesamiento limita el origen a 2400 px en su lado mayor y la salida a 1600 px; no reemplaza el archivo original, que sólo permanece en memoria durante la sesión. Las cartas ya guardadas en IndexedDB **no son tocadas ni migradas** por el laboratorio. No enviar fotos a repositorios públicos. El próximo corte debe almacenar el original y su derivado vinculado en la biblioteca con esquema versionado y respaldos compatibles.
 
 Para probar el algoritmo: `node --test tests/test_perspective.cjs`. Las pruebas E2E en `tests/test_digitalizacion.py` prueban la carga, el recorte, la descarga y la ausencia de escrituras en IndexedDB.
+
+## Guardado vinculado: 0.3A.2 (PR apilado, experimental)
+
+El laboratorio `app/digitalizar.html` ahora permite **Guardar nueva carta** desde una fotografía enderezada. Al usar ese botón:
+
+1. Se almacena la fotografía cargada en `pages[0].front` como **original** (Blob/File sin modificar).
+2. El PNG corregido queda en `pages[0].frontDerived`; se conservan puntos y dimensiones en `pages[0].frontCrop`, con `algorithm=homography-js-v1`.
+3. Se crea un **nuevo** recuerdo con `schemaVersion=3` en el *mismo* `IndexedDB` (`nuestro-archivo-cartas-v1` / `letters`). El código usa `add` y no reescribe IDs existentes.
+4. En el visor, **Ver fotos originales / Ver digitalización** permite comparar la textura sin reemplazar los bytes originales.
+5. **Exportar respaldo** ahora genera el formato `nuestro-archivo-v3`, con originales, derivados y parámetros. **Importar respaldo** admite v1/v2/v3 y procesa/valida antes de guardar en una sola transacción.
+
+### Compatibilidad y seguridad de tus recuerdos existentes
+
+- Los registros de 0.2 permanecen con su estructura y sus fotos; **no hay migración automática destructiva ni incremento de versión de base IndexedDB**. Los datos antiguos se normalizan al leer; los registros editados o importados pasan a formato de registro 3.
+- **Primero exportá un respaldo privado desde el navegador donde ya guardaste tus recuerdos.** No elimines ese respaldo hasta comprobar una restauración completa; las copias JSON siguen sin cifrar.
+- Si arrancás el servidor en otro **origen** (host, puerto o protocolo distinto), verás otra base local. Firefox y Chromium tampoco comparten IndexedDB.
+- El guardado asistido crea una **carta nueva de una hoja (frente)**, no adjunta una hoja a una carta existente, no digitaliza reversos en este flujo y no detecta esquinas automáticamente. Se añadirán en cortes posteriores.
+- **No guardes JSON de respaldo, fotografías ni nombres reales en GitHub público.**
+
+### Validación automatizada
+
+`python -m unittest discover -s tests -v` cubre persistencia real, compatibilidad v1/v2/v3, original y derivado con SHA-256, importación atómica ante archivo inválido y regresión del visor. `node --test tests/test_perspective.cjs` verifica la geometría.
+
+**Limitación de diseño:** los activos original/derivado siguen embebidos en cada página del registro para preservar el esquema físico actual. La separación en stores independientes con migración explícita es trabajo futuro y no se declara implementada.
