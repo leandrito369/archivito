@@ -145,7 +145,7 @@ class ArchiveV3Tests(unittest.TestCase):
         item=self.page.evaluate("""async () => (await all())[0]""")
         self.assertEqual(item["schemaVersion"],3)
         self.assertIsNone(item["pages"][0]["frontDerived"])
-        self.assertEqual(item["pages"][0]["front"]["size"],len(original))
+        self.assertEqual(self.page.evaluate("async ()=>(await all())[0].pages[0].front.size"),len(original))
 
         # Segundo respaldo contiene un válido seguido de otro inválido.
         # Ninguno de los dos debe llegar a persistir.
