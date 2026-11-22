@@ -55,11 +55,11 @@
 - Transcripción manuscrita manual (OCR opcional no confiable).
 - Verificar recuperación de respaldos grandes.
 
-## Actualización de prioridad — acceso web compartido (22/11/2026)
+## Actualización de arquitectura — Cloudflare Pages + Supabase Free (22/11/2026)
 
-El objetivo confirmado es que dos personas usen Archivito desde cualquier lugar mediante Chrome/Firefox/Safari y cuentas Google independientes. Antes de la primera publicación con cartas personales, se prioriza **0.4A.1: respaldo cifrado e integridad**, seguido de acceso remoto y sincronización protegida.
+La decisión actual es **Cloudflare Pages Free (frontend HTTPS) + Supabase Free (Google Auth, PostgreSQL, Storage privado, Realtime)**. Sustituye el plan Firebase anterior. El usuario requiere acceso desde cualquier dispositivo para dos personas, con originales y derivados cifrados antes de subir; no está implementado todavía.
 
-Ver el [Plan de acceso web compartido](PLAN_ACCESO_WEB_COMPARTIDO.md) y la [ADR-0002](decisiones/ADR-0002-acceso-web-compartido.md), que separan hosting público del código, autorización estricta de fotos y cifrado extremo a extremo. **Esto es planificación**, no funcionalidad ya implementada.
+Ver [Plan de acceso web compartido](PLAN_ACCESO_WEB_COMPARTIDO.md) y [ADR-0003](decisiones/ADR-0003-cloudflare-supabase.md). Se mantienen las prioridades de 0.4A.1 (respaldo cifrado v4) y #13–#16 (hosting/auth, clave, sincronización, PWA).
 
 ## Iteración 4 — 1.0: biblioteca compartida
 
