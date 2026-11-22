@@ -155,7 +155,7 @@
     $("#file").addEventListener("change", async event => {
       const file = event.target.files?.[0];
       if (!file) return;
-      original = null;processedPoints=null;
+      original = null;processedPoints=null;$("#rec-title").disabled=false;$("#save-archive").textContent="Guardar nueva carta";
       $("#process").disabled = $("#reset").disabled = $("#export").disabled = $("#save-archive").disabled = true;
       result.style.display = "none"; $("#empty-result").hidden = false;
       if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type) ||
