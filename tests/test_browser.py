@@ -16,7 +16,7 @@ from threading import Thread
 import unittest
 import zlib
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 ROOT = Path(__file__).resolve().parents[1]
 FRONT_RGB = (93, 143, 196)
@@ -110,7 +110,7 @@ class BrowserIntegrationTests(unittest.TestCase):
         self.page.locator("#add-page").click()
         original_hashes.append(self.upload(2, SECOND_RGB))
         self.page.locator("#editor-save").click()
-        self.page.locator("#stat-count").get_by_text("1").wait_for()
+        expect(self.page.locator("#stat-count")).to_have_text("1")
         return original_hashes
 
     def test_persistencia_visor_edicion_y_originales(self):
@@ -136,7 +136,7 @@ class BrowserIntegrationTests(unittest.TestCase):
         self.page.locator("#edit-record").click()
         self.page.locator("#rec-title").fill("Carta editada")
         self.page.locator("#editor-save").click()
-        self.page.locator("#stat-count").get_by_text("1").wait_for()
+        expect(self.page.locator("#stat-count")).to_have_text("1")
         self.page.reload()
         self.page.wait_for_function("typeof db !== 'undefined' && db !== null")
         data = self.page.evaluate(blob_hash_js())
@@ -172,7 +172,7 @@ class BrowserIntegrationTests(unittest.TestCase):
                 "mimeType": "application/json",
                 "buffer": backup
             })
-            restored.locator("#stat-count").get_by_text("1").wait_for()
+            expect(restored.locator("#stat-count")).to_have_text("1")
             saved = restored.evaluate(blob_hash_js())
             self.assertEqual(saved[0]["pages"][0]["front"], hashes[0])
             self.assertEqual(saved[0]["pages"][0]["back"], hashes[1])
@@ -198,7 +198,7 @@ class BrowserIntegrationTests(unittest.TestCase):
             "mimeType": "application/json",
             "buffer": json.dumps(legacy).encode()
         })
-        self.page.locator("#stat-count").get_by_text("1").wait_for()
+        expect(self.page.locator("#stat-count")).to_have_text("1")
         records = self.page.evaluate(blob_hash_js())
         self.assertEqual(records[0]["pages"][0]["front"], hashlib.sha256(image_bytes).hexdigest())
         self.page.reload()
