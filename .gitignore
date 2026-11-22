@@ -1,0 +1,20 @@
+# Datos personales: no versionar recuerdos ni respaldos
+*.local.json
+*.backup.json
+*.backup.zip
+/backups/
+/private/
+/recuerdos-privados/
+/user-data/
+/.env
+.env.*
+!.env.example
+
+# Dependencias y compilados futuros
+node_modules/
+dist/
+build/
+coverage/
+.cache/
+.DS_Store
+Thumbs.db
