@@ -16,22 +16,22 @@ Archivito preserva fotografías originales de cartas, sobres y recuerdos y permi
 
 Con Python 3 desde la raíz del repositorio:
 
-\`\`\`powershell
+```powershell
 py -m http.server 8000 --bind 127.0.0.1
-\`\`\`
+```
 
-Abrí \`http://localhost:8000/app/\`. **No cambiés entre \`localhost\` y \`127.0.0.1\`, entre puertos ni entre perfiles de navegador** esperando compartir la misma colección. IndexedDB pertenece al origen y al perfil.
+Abrí `http://localhost:8000/app/`. **No cambiés entre `localhost` y `127.0.0.1`, entre puertos ni entre perfiles de navegador** esperando compartir la misma colección. IndexedDB pertenece al origen y al perfil.
 
 ## Probar el visor 3D experimental (PR #11)
 
 Después de cambiar a la rama del PR, con Node y npm instalados:
 
-\`\`\`powershell
+```powershell
 npm install
 py -m http.server 8000 --bind 127.0.0.1
-\`\`\`
+```
 
-Entrá a la biblioteca, abrí una carta y seleccioná **Abrir visor 3D**. Three.js se carga desde \`node_modules\` local; **no se utiliza CDN** para cargar fotografías ni bibliotecas al visualizar cartas. Si falta Three.js o WebGL, la pantalla ofrece una **vista 2D**. Se conserva el visor de siempre.
+Entrá a la biblioteca, abrí una carta y seleccioná **Abrir visor 3D**. Three.js se carga desde `node_modules` local; **no se utiliza CDN** para cargar fotografías ni bibliotecas al visualizar cartas. Si falta Three.js o WebGL, la pantalla ofrece una **vista 2D**. Se conserva el visor de siempre.
 
 ## Documentación
 
