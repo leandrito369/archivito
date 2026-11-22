@@ -101,3 +101,47 @@ La base sigue siendo IndexedDB `nuestro-archivo-cartas-v1` / `letters`. Los resp
 **Limitaciones:** la homografía es manual, todavía no hay detector automático de bordes, OpenCV.js ni visor Three.js. Para reemplazar fotografías originales de caras ya archivadas, usá el editor general: eso **invalida** el recorte anterior y exige regenerarlo. La captura contextual evita reemplazos accidentales.
 
 **Pruebas:** `python -m unittest discover -s tests -v` incluye casos de varias hojas, reversos ya presentes o faltantes, original preservado, respaldo/restore v3, y conflicto con otra pestaña. `node --check app/capture-existing.js` verifica sintaxis del módulo.
+
+
+## Visor físico 0.3B.1 — experimento Three.js local
+
+Este primer visor 3D usa Three.js **instalado en el proyecto** (versión exacta fijada en \`package.json\`) y nunca lo descarga desde un CDN cuando abrís la aplicación. Las fotos proceden exclusivamente de IndexedDB y sólo se procesan en tu navegador. La hoja se aproxima mediante dos superficies diferentes, leve grosor, curvatura e iluminación. **No reconstruye las arrugas ni el relieve real de una carta.**
+
+### Preparación en Windows (PowerShell)
+
+Desde la **carpeta raíz del repositorio** (donde están \`package.json\` y \`app/\`):
+
+\`\`\`powershell
+npm install
+py -m http.server 8000
+\`\`\`
+
+Abrí \`http://localhost:8000/app/\`, elegí una carta y pulsá **Abrir visor 3D**. Si el 3D no puede iniciarse (WebGL ausente, dependencia sin instalar), seguirá disponible una **vista 2D** que muestra frente/reverso y permite navegar por las hojas. El visor 0.3A anterior sigue disponible en la biblioteca; el nuevo no lo reemplaza.
+
+### Funciones 0.3B.1
+
+- Malla subdividida con frente y reverso texturizados **por separado**, usando el derivado corregido cuando exista y conservando el original intacto.
+- Canto aproximado de papel, iluminación cálida, control de curvatura.
+- Rotación con mouse o touch, zoom con rueda y botones, reset, cambiar cara, cambiar página.
+- Botón para alternar entre fotos originales y derivadas y fallback de lectura 2D.
+- Gestión de texturas por hoja: limitar a 2048 px para GPU; liberar recursos y cerrar objetos al cambiar de página.
+- Se vuelve a la carta seleccionada en la biblioteca sin modificar su ID ni su contenido.
+
+### Privacidad y almacenamiento
+
+- \`app/visor-3d.html\` realiza **sólo lecturas** en la misma base \`nuestro-archivo-cartas-v1/letters\`; no altera ni migra recuerdos.
+- Instalar npm requiere acceso a Internet **una sola vez**. La navegación posterior se ejecuta localmente, sin dependencias CDN.
+- No subas \`node_modules/\`, cartas reales ni respaldos JSON al repositorio público.
+- Si cambiás de host, protocolo, puerto o perfil, IndexedDB cambia de origen; los recuerdos previos pueden no aparecer.
+
+### Pruebas automatizadas
+
+\`\`\`powershell
+npm install
+node --test tests/test_paper_math.cjs
+python -m unittest discover -s tests -v
+\`\`\`
+
+Los casos del visor incluyen fallback 2D, cambio de hoja y cara con imágenes ficticias y prueba WebGL si el runner admite aceleración/software rendering. Los E2E antiguos de IndexedDB, Firefox y respaldos siguen activos.
+
+**Pendientes posteriores:** escenas Three.js más expresivas, mejora del espesor y bordes curvos, animación de giro controlada, alternativa accesible con teclado, medición de rendimiento móvil, y fijar un \`package-lock.json\` antes de una distribución reproducible formal.
