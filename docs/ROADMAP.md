@@ -2,6 +2,9 @@
 
 **Línea base:** 2026-11-22. Estados expresan sólo avances comprobados en este repositorio o prototipos externos explícitamente indicados.
 
+> **Actualización de estado (22/11/2026):** Las iteraciones 0 y 0.3A se integraron en main mediante PR #5–#9. El visor Three.js 0.3B.1 está en [PR #11](https://github.com/leandrito369/archivito/pull/11), con CI verde y validación manual, pero aún sin merge. **Siguiente prioridad propuesta: 0.4A — integridad de originales y respaldo cifrado restaurable.** El detalle de funciones, dependencias y pendientes está en [Mapa funcional y prioridades](MAPA_FUNCIONAL_Y_PRIORIDADES.md). Los apartados siguientes conservan la planificación histórica; no deben interpretarse como estados actuales.
+
+
 ## Iteración 0 — Base y adopción del prototipo 0.2
 
 **Objetivo:** pasar de un repositorio documental a una aplicación reproducible y probada.
