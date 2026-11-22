@@ -87,6 +87,19 @@ class ThreeViewerTests(unittest.TestCase):
         self.assertEqual(self.color_from_flat()[:3],[221,55,51])
         self.page.locator("#back").click()
         self.assertEqual(self.color_from_flat()[:3],[43,73,217])
+    def webgl_center_rgb(self):
+        raw=self.page.locator("#webgl-stage canvas").first.screenshot()
+        image=base64.b64encode(raw).decode()
+        return self.page.evaluate("""async b64 => {
+            const img=new Image();img.src='data:image/png;base64,'+b64;
+            await img.decode();
+            const c=document.createElement('canvas');
+            c.width=img.width;c.height=img.height;
+            const ctx=c.getContext('2d');ctx.drawImage(img,0,0);
+            return [...ctx.getImageData(Math.floor(c.width/2),
+                Math.floor(c.height/2),1,1).data];
+        }""",image)
+
     def test_webgl_textura_cara_y_curvatura(self):
         try:
             expect(self.page.locator("#status")).to_contain_text("Three.js local activo",timeout=25000)
@@ -94,6 +107,14 @@ class ThreeViewerTests(unittest.TestCase):
             self.skipTest("No hay contexto WebGL disponible en Chromium del runner; fallback 2D validado")
         expect(self.page.locator("#webgl-stage canvas")).to_be_visible()
         expect(self.page.locator("#flat-view")).to_be_hidden()
+        self.page.locator("#front").click()
+        self.page.evaluate("()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))")
+        front=self.webgl_center_rgb()
+        self.page.locator("#back").click()
+        self.page.evaluate("()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))")
+        back=self.webgl_center_rgb()
+        self.assertGreater(front[0]-front[2],25,"Frente WebGL incorrecto: "+str(front))
+        self.assertGreater(back[2]-back[0],25,"Reverso WebGL incorrecto: "+str(back))
         self.page.locator("#curve").fill("60")
         self.page.locator("#zoom-in").click()
         self.page.locator("#back").click()
