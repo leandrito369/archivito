@@ -13,7 +13,7 @@ const appOut = join(destination, "app");
 // Lista explícita: ningún archivo inesperado dentro de app/ se publica.
 const publicFiles = [
   "index.html", "digitalizar.html", "visor-3d.html",
-  "archive-v3.js", "capture-existing.js", "paper-math.js",
+  "archive-v3.js", "local-generation.js", "capture-existing.js", "paper-math.js",
   "perspective.js", "visor-3d-data.js", "acceso.html", "auth-return.js", "crypto-lab.html",
   "respaldo-v4.html", "crypto-v4.js", "backup-v4.js"
 ];

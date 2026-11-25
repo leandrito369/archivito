@@ -29,7 +29,7 @@ test("no incluye dependencias completas, datos privados o respaldos",async()=>{
   const output=await readdir(dist,{withFileTypes:true});
   assert.deepEqual(output.map(x=>x.name).sort(),["_headers","app","index.html"].sort());
   const allowed=new Set([
-    "index.html","digitalizar.html","visor-3d.html","archive-v3.js",
+    "index.html","digitalizar.html","visor-3d.html","archive-v3.js","local-generation.js",
     "capture-existing.js","paper-math.js","perspective.js",
     "visor-3d-data.js","visor-three.js","respaldo-v4.html",
     "crypto-v4.js","backup-v4.js","acceso.html","auth-return.js","auth-entry.js","crypto-lab.html","crypto-lab.js"
