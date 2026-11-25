@@ -14,10 +14,10 @@ const appOut = join(destination, "app");
 const publicFiles = [
   "index.html", "digitalizar.html", "visor-3d.html",
   "archive-v3.js", "capture-existing.js", "paper-math.js",
-  "perspective.js", "visor-3d-data.js", "acceso.html", "auth-return.js",
+  "perspective.js", "visor-3d-data.js", "acceso.html", "auth-return.js", "crypto-lab.html",
   "respaldo-v4.html", "crypto-v4.js", "backup-v4.js"
 ];
-const mandatory = ["index.html", "digitalizar.html", "visor-3d.html", "acceso.html", "auth-return.js"];
+const mandatory = ["index.html", "digitalizar.html", "visor-3d.html", "acceso.html", "auth-return.js", "crypto-lab.html"];
 async function exists(path) { try { return (await stat(path)).isFile(); } catch { return false; } }
 
 async function main() {
@@ -65,6 +65,12 @@ async function main() {
       __ARCHIVITO_SUPABASE_PUBLISHABLE_KEY__:JSON.stringify(supabaseKey)
     }
   });
+  await build({
+    entryPoints:[join(src,"crypto-lab.js")],
+    outfile:join(appOut,"crypto-lab.js"),
+    bundle:true,platform:"browser",format:"esm",target:"es2022",minify:true,
+    sourcemap:false,legalComments:"eof"
+  });
   const libraryPath=join(appOut,"index.html");
   const library=await readFile(libraryPath,"utf8");
   if(!library.includes("<head>")||!library.includes("</body>"))throw Error("HTML de biblioteca inesperado.");
@@ -97,7 +103,7 @@ async function main() {
   await writeFile(join(destination, "_headers"), headers, "utf8");
 
   const files = await readdir(appOut);
-  if (files.some(name => !publicFiles.includes(name) && !["visor-three.js","auth-entry.js"].includes(name)))
+  if (files.some(name => !publicFiles.includes(name) && !["visor-three.js","auth-entry.js","crypto-lab.js"].includes(name)))
     throw Error("Archivo no permitido en dist/app.");
   console.log("Archivito Pages: build estático en dist/ (" + files.length + " archivos).");
 }
