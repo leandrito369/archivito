@@ -33,3 +33,4 @@ jobs:
           npm run test:storage-adapter
           npm run test:fixture-service
           npm run test:fixture-read
+          npm run test:sync-v3
