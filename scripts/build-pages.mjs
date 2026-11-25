@@ -14,10 +14,10 @@ const appOut = join(destination, "app");
 const publicFiles = [
   "index.html", "digitalizar.html", "visor-3d.html",
   "archive-v3.js", "capture-existing.js", "paper-math.js",
-  "perspective.js", "visor-3d-data.js",
+  "perspective.js", "visor-3d-data.js", "acceso.html", "auth-return.js",
   "respaldo-v4.html", "crypto-v4.js", "backup-v4.js"
 ];
-const mandatory = ["index.html", "digitalizar.html", "visor-3d.html"];
+const mandatory = ["index.html", "digitalizar.html", "visor-3d.html", "acceso.html", "auth-return.js"];
 async function exists(path) { try { return (await stat(path)).isFile(); } catch { return false; } }
 
 async function main() {
@@ -47,6 +47,30 @@ async function main() {
     logLevel: "warning"
   });
 
+  // Public configuration only. Never allow service-role or secret API keys.
+  const supabaseUrl = process.env.ARCHIVITO_SUPABASE_URL || "";
+  const supabaseKey = process.env.ARCHIVITO_SUPABASE_PUBLISHABLE_KEY || "";
+  if (Boolean(supabaseUrl) !== Boolean(supabaseKey))
+    throw Error("Configurá ambas variables públicas de Supabase o ninguna.");
+  if (supabaseUrl && (!/^https:\/\/[a-z0-9]+\.supabase\.co$/.test(supabaseUrl) ||
+      !/^sb_publishable_[a-zA-Z0-9_-]+$/.test(supabaseKey)))
+    throw Error("Sólo se admite URL HTTPS de Supabase y publishable key.");
+  await build({
+    entryPoints:[join(src,"auth-entry.js")],
+    outfile:join(appOut,"auth-entry.js"),
+    bundle:true,platform:"browser",format:"esm",target:"es2022",minify:true,
+    sourcemap:false,legalComments:"eof",
+    define:{
+      __ARCHIVITO_SUPABASE_URL__:JSON.stringify(supabaseUrl),
+      __ARCHIVITO_SUPABASE_PUBLISHABLE_KEY__:JSON.stringify(supabaseKey)
+    }
+  });
+  const libraryPath=join(appOut,"index.html");
+  const library=await readFile(libraryPath,"utf8");
+  if(!library.includes("<head>")||!library.includes("</body>"))throw Error("HTML de biblioteca inesperado.");
+  await writeFile(libraryPath,library.replace("<head>",'<head><meta name="referrer" content="no-referrer"><script src="./auth-return.js"></script>')
+    .replace("</body>",'<p style="text-align:center;padding:16px"><a href="./acceso.html" style="color:#eac99a">Acceso compartido — prueba Google</a></p></body>'),"utf8");
+
   const visorFile = join(appOut, "visor-3d.html");
   const html = await readFile(visorFile, "utf8");
   const pattern = /<script type="importmap">[\s\S]*?<\/script>/;
@@ -57,9 +81,9 @@ async function main() {
   const landing = [
     '<!doctype html><html lang="es"><head><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width,initial-scale=1">',
-    '<meta http-equiv="refresh" content="0;url=/app/index.html">',
+    '<meta http-equiv="refresh" content="0;url=/app/acceso.html">',
     '<title>Archivito</title></head><body>',
-    '<p><a href="/app/index.html">Abrir Archivito</a></p></body></html>'
+    '<p><a href="/app/acceso.html">Abrir Archivito</a></p></body></html>'
   ].join("\n");
   await writeFile(join(destination, "index.html"), landing, "utf8");
 
@@ -73,7 +97,7 @@ async function main() {
   await writeFile(join(destination, "_headers"), headers, "utf8");
 
   const files = await readdir(appOut);
-  if (files.some(name => !publicFiles.includes(name) && name !== "visor-three.js"))
+  if (files.some(name => !publicFiles.includes(name) && !["visor-three.js","auth-entry.js"].includes(name)))
     throw Error("Archivo no permitido en dist/app.");
   console.log("Archivito Pages: build estático en dist/ (" + files.length + " archivos).");
 }
