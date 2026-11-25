@@ -11,5 +11,5 @@ export async function inspectAccess(client) {
   if (!Array.isArray(rows) || rows.length !== 1 ||
       !["owner","editor"].includes(rows[0].role) || !rows[0].archive_id)
     return { state: "denied" };
-  return { state: "authorized", role: rows[0].role, archiveId: rows[0].archive_id };
+  return { state: "authorized", role: rows[0].role, archiveId: rows[0].archive_id, userId: data.user.id };
 }

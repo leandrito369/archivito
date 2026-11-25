@@ -6,6 +6,6 @@ function fake({session=true,user="u",rows=[],fail=false,userError=false}={}){
 }
 test("sin sesión no se autoriza",async()=>assert.deepEqual(await inspectAccess(fake({session:false})),{state:"signed-out"}));
 test("cuenta Google no miembro rechazada",async()=>assert.deepEqual(await inspectAccess(fake()),{state:"denied"}));
-test("propietario y editor autorizados",async()=>{for(const role of ["owner","editor"])assert.deepEqual(await inspectAccess(fake({rows:[{archive_id:"a",role}]})),{state:"authorized",role,archiveId:"a"});});
+test("propietario y editor autorizados",async()=>{for(const role of ["owner","editor"])assert.deepEqual(await inspectAccess(fake({rows:[{archive_id:"a",role}]})),{state:"authorized",role,archiveId:"a",userId:"u"});});
 test("membresías ambiguas y roles inesperados denegados",async()=>{for(const rows of [[{archive_id:"a",role:"admin"}],[{archive_id:"a",role:"owner"},{archive_id:"b",role:"editor"}]])assert.equal((await inspectAccess(fake({rows}))).state,"denied");});
 test("error de identidad o base no autoriza",async()=>{await assert.rejects(inspectAccess(fake({userError:true})));await assert.rejects(inspectAccess(fake({fail:true})));});

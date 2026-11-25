@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { inspectAccess } from "./auth-access.mjs";
+import { inspectKeyAccess, createSessionKeyGate } from "./session-key.mjs";
 
 const status = document.querySelector("#status");
 const login = document.querySelector("#login");
@@ -7,7 +7,43 @@ const logout = document.querySelector("#logout");
 const retry = document.querySelector("#retry");
 const url = __ARCHIVITO_SUPABASE_URL__;
 const key = __ARCHIVITO_SUPABASE_PUBLISHABLE_KEY__;
-let client, seq = 0;
+let client, seq = 0, gate, keyEpoch=0;
+const $=id=>document.getElementById(id);
+const keyStatus=$("key-status"), keyCode=$("key-code");
+function clearKeyPanel(){
+ keyEpoch++;gate?.clear();$("key-panel").hidden=true;keyCode.value="";keyCode.type="password";$("key-show").checked=false;$("key-fingerprint").textContent="";keyStatus.textContent="";
+}
+function showKeyPanel(access){
+ $("key-panel").hidden=false;
+ $("key-generate").hidden=access.role!=="owner"||access.fingerprint!==null;
+ $("key-unlock").hidden=access.fingerprint===null;
+ keyCode.disabled=access.fingerprint===null&&access.role!=="owner";
+ keyStatus.textContent=access.fingerprint===null?"Clave sin registrar. "+(access.role==="owner"?"Generá un código de prueba para preparar su huella.":"El propietario debe completar la configuración."):"Clave registrada. Introducí el código privado.";
+ $("key-fingerprint").textContent=access.fingerprint?"Huella registrada: "+access.fingerprint:"";
+}
+async function keyAction(action){
+ const e=++keyEpoch;
+ $("key-generate").disabled=true;$("key-unlock").disabled=true;
+ try{
+  if(action==="generate"){
+   const value=await gate.candidate();
+   if(e!==keyEpoch)return;
+   keyCode.value=value.code;
+   $("key-fingerprint").textContent="Huella candidata (64 caracteres): "+value.fingerprint;
+   keyStatus.textContent="Guardá el código de prueba en privado. Sólo la huella puede registrarse administrativamente.";
+  }else{
+   const code=keyCode.value.trim();keyCode.value="";keyCode.type="password";$("key-show").checked=false;
+   await gate.unlock(code);
+   if(e===keyEpoch)keyStatus.textContent="Clave verificada y desbloqueada en memoria. Sincronización deshabilitada.";
+  }
+ }catch{if(e===keyEpoch){keyCode.value="";keyStatus.textContent="Operación rechazada. Revisá la clave o volvé a comprobar el acceso.";}}
+ finally{if(e===keyEpoch){$("key-generate").disabled=false;$("key-unlock").disabled=false;}}
+}
+$("key-show").onchange=()=>{keyCode.type=$("key-show").checked?"text":"password";};
+$("key-generate").onclick=()=>keyAction("generate");
+$("key-unlock").onclick=()=>keyAction("unlock");
+$("key-lock").onclick=()=>{keyEpoch++;gate?.lock();keyCode.value="";keyCode.type="password";$("key-show").checked=false;$("key-generate").disabled=false;$("key-unlock").disabled=false;keyStatus.textContent="Clave bloqueada.";};
+addEventListener("pagehide",()=>{++seq;clearKeyPanel();});
 function show(message){status.textContent = message;}
 function render(state){
   login.hidden = state !== "signed-out";
@@ -19,14 +55,16 @@ function render(state){
 }
 async function refresh(){
   const token=++seq;
+  clearKeyPanel();
+  $("key-generate").disabled=false;$("key-unlock").disabled=false;
   show("Verificando sesión y permisos…");
   try{
-    const result=await inspectAccess(client);
+    const result=await gate.refresh();
     if(token!==seq)return;
     render(result.state);
     if(result.state==="signed-out")show("Iniciá sesión para solicitar acceso.");
     if(result.state==="denied")show("Cuenta autenticada, sin autorización para el archivo. El administrador debe habilitarla.");
-    if(result.state==="authorized")show("Acceso autorizado ("+(result.role==="owner"?"propietario":"editor")+"). Sincronización aún deshabilitada.");
+    if(result.state==="authorized"){show("Acceso autorizado ("+(result.role==="owner"?"propietario":"editor")+"). Sincronización aún deshabilitada.");showKeyPanel(result);}
   }catch{
     if(token!==seq)return;
     render("error");show("No se pudo verificar el acceso. Reintentá con conexión a Internet.");
@@ -36,6 +74,7 @@ async function init(){
   if(!url||!key){show("Configuración de Supabase ausente. Compilá con la URL y la clave pública del proyecto.");return;}
   try{
     client=createClient(url,key,{auth:{flowType:"pkce",persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storageKey:"archivito-auth-v1",storage:sessionStorage}});
+    gate=createSessionKeyGate(()=>inspectKeyAccess(client));
     login.onclick=async()=>{
       login.disabled=true;
       try{
@@ -45,7 +84,7 @@ async function init(){
       }catch{login.disabled=false;show("No se pudo iniciar Google OAuth. Revisá la configuración y la conexión.");}
     };
     logout.onclick=async()=>{
-      ++seq;logout.disabled=true;
+      ++seq;clearKeyPanel();logout.disabled=true;
       try{const {error}=await client.auth.signOut({scope:"local"});if(error)throw error;await refresh();}
       catch{render("error");show("No se pudo cerrar la sesión. Reintentá.");}
     };
@@ -60,7 +99,7 @@ async function init(){
       history.replaceState(null,"",location.pathname);
       render("signed-out");show("Google no completó el inicio de sesión. Volvé a intentarlo.");return;
     }
-    client.auth.onAuthStateChange(()=>{setTimeout(refresh,0);});
+    client.auth.onAuthStateChange(()=>{++seq;clearKeyPanel();setTimeout(refresh,0);});
     await refresh();
   }catch{show("No se pudo iniciar el módulo de acceso. Revisá configuración y navegador.");}
 }

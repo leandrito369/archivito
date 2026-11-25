@@ -1,0 +1,7 @@
+# CLOUD-02.2 — Puesta en servicio de clave compartida (prueba)
+
+Se añadió un verificador SHA-256 de una clave aleatoria de 256 bits a archives.key_fingerprint. El campo sigue NULL; sólo el administrador puede configurarlo. RLS de lectura por membresía sin nuevos grants de escritura. No se almacena el secreto en servidor. Snapshot SQL en docs/sql. Generación de candidato sólo para owner, previa consulta de sesión/membresía. Descifrado futuro requerirá verificador idéntico; la clave no exportable vive en memoria hasta bloqueo, cierre de sesión, recarga o revalidación de auth. No se implementa persistencia de clave, rotación, cifrado de recuerdos existentes o sync.
+
+Prueba con Node 22: npm ci && npm run test:crypto && npm run test:session-key && npm run build:pages. Configurar URL y publishable key en terminal como CLOUD-01.2. Entrar a /app/acceso.html. Owner genera código DE PRUEBA y conserva fuera de la app; copiar únicamente la huella candidata para revisión administrativa. No enviar código secreto ni usar recuerdos reales. Editor debe esperar hasta configurar huella. Registro de huella y pruebas con ambos miembros siguen pendientes. Revocar membresía no revoca copias previas de clave; la custodia definitiva, rotación, pruebas REST/Storage, revisión de seguridad y backup v4 son gates antes de uso real. Código servido por hosting comprometido puede capturar secretos; no prometer protección frente a ese riesgo.
+
+PR apilado sobre #21. No despliegue, no merge automático.

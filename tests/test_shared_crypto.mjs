@@ -1,3 +1,5 @@
+import { webcrypto } from "node:crypto";
+if (!globalThis.crypto?.subtle) Object.defineProperty(globalThis,"crypto",{value:webcrypto,configurable:true});
 import {test} from "node:test";
 import assert from "node:assert/strict";
 import {generateRecoveryCode,unlockRecoveryCode,seal,open,sealMetadata,openMetadata,sha256Hex,toBase64Url,fromBase64Url} from "../app/shared-crypto.mjs";

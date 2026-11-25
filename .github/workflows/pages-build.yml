@@ -28,3 +28,4 @@ jobs:
           npm run test:pages
           npm run test:auth
           npm run test:crypto
+          npm run test:session-key

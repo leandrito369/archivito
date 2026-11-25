@@ -13,6 +13,8 @@ Estado: experimental, sin conexión con Supabase ni recuerdos reales. Depende de
 
 ## Prueba manual en Linux
 
+Requisito: Node.js 22 (verificar con node -v). Node 18 no satisface las dependencias. El adaptador Web Crypto de tests es exclusivamente para el runner; no cambia el navegador.
+
 Desde el repositorio local actualizado, con cambios locales respaldados y sin detenerse sobre una rama con cambios sin guardar:
 
 ```bash
