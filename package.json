@@ -6,10 +6,12 @@
   "scripts": {
     "test:paper": "node --test tests/test_paper_math.cjs",
     "build:pages": "node scripts/build-pages.mjs",
-    "test:pages": "node --test tests/test_pages_build.mjs"
+    "test:pages": "node --test tests/test_pages_build.mjs",
+    "test:auth": "node --test tests/test_auth_access.mjs"
   },
   "dependencies": {
-    "three": "0.187.0"
+    "three": "0.187.0",
+    "@supabase/supabase-js": "2.119.2"
   },
   "devDependencies": {
     "esbuild": "0.28.2"
