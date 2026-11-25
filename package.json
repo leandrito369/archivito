@@ -9,7 +9,8 @@
     "test:pages": "node --test tests/test_pages_build.mjs",
     "test:auth": "node --test tests/test_auth_access.mjs",
     "test:crypto": "node --test tests/test_shared_crypto.mjs",
-    "test:session-key": "node --test tests/test_session_key.mjs"
+    "test:session-key": "node --test tests/test_session_key.mjs",
+    "test:sync": "node --test tests/test_sync_contract.mjs"
   },
   "dependencies": {
     "three": "0.187.0",
