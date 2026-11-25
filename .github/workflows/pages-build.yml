@@ -22,6 +22,9 @@ jobs:
           node-version: '22'
       - name: Instalar dependencias fijadas
         run: npm install --include=dev --no-audit --no-fund
+      - name: Evidencia temporal de lockfile npm (sin datos de usuario)
+        run: |
+          node -e 'console.log("ARCHIVITO_LOCK_BEGIN");console.log(require("node:fs").readFileSync("package-lock.json","utf8"));console.log("ARCHIVITO_LOCK_END")'
       - name: Compilar y comprobar archivos públicos
         run: |
           npm run build:pages
