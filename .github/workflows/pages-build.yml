@@ -27,3 +27,4 @@ jobs:
           npm run build:pages
           npm run test:pages
           npm run test:auth
+          npm run test:crypto
