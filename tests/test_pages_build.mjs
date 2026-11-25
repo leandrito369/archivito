@@ -7,12 +7,12 @@ const dist=resolve("dist");
 const app=join(dist,"app");
 
 test("compilación Pages expone páginas de Archivito",async()=>{
-  for(const file of ["index.html","digitalizar.html","visor-3d.html"]){
+  for(const file of ["index.html","digitalizar.html","visor-3d.html","acceso.html"]){
     const html=await readFile(join(app,file),"utf8");
     assert.match(html,/<html/);
     assert.ok(html.length>100);
   }
-  assert.match(await readFile(join(dist,"index.html"),"utf8"),/\/app\/index.html/);
+  assert.match(await readFile(join(dist,"index.html"),"utf8"),/\/app\/acceso.html/);
 });
 
 test("Three.js queda integrado sin importmap ni acceso a node_modules",async()=>{
@@ -32,7 +32,7 @@ test("no incluye dependencias completas, datos privados o respaldos",async()=>{
     "index.html","digitalizar.html","visor-3d.html","archive-v3.js",
     "capture-existing.js","paper-math.js","perspective.js",
     "visor-3d-data.js","visor-three.js","respaldo-v4.html",
-    "crypto-v4.js","backup-v4.js"
+    "crypto-v4.js","backup-v4.js","acceso.html","auth-return.js","auth-entry.js"
   ]);
   const files=await readdir(app);
   assert.ok(files.length>=9);
@@ -41,4 +41,14 @@ test("no incluye dependencias completas, datos privados o respaldos",async()=>{
     assert.ok((await stat(join(app,name))).isFile());
     assert.doesNotMatch(name,/\.(json|png|jpe?g|webp|gif|archivito|env)$/i);
   }
+});
+
+test("acceso de Google empaquetado y retorno OAuth local",async()=>{
+  const html=await readFile(join(app,"acceso.html"),"utf8");
+  const index=await readFile(join(app,"index.html"),"utf8");
+  const bundle=await readFile(join(app,"auth-entry.js"),"utf8");
+  assert.match(html,/auth-entry\.js/);
+  assert.match(index,/auth-return\.js/);
+  assert.doesNotMatch(bundle,/from\s*["']@supabase\/supabase-js["']/);
+  assert.ok(bundle.length>10000);
 });
