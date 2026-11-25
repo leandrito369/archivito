@@ -36,16 +36,6 @@ async function init(){
   if(!url||!key){show("Configuración de Supabase ausente. Compilá con la URL y la clave pública del proyecto.");return;}
   try{
     client=createClient(url,key,{auth:{flowType:"pkce",persistSession:true,autoRefreshToken:true,detectSessionInUrl:false,storageKey:"archivito-auth-v1",storage:sessionStorage}});
-    const query=new URLSearchParams(location.search);
-    if(query.has("code")){
-      const code=query.get("code");
-      history.replaceState(null,"",location.pathname);
-      const {error}=await client.auth.exchangeCodeForSession(code);
-      if(error){render("signed-out");show("No se pudo completar Google OAuth. Volvé a iniciar sesión.");return;}
-    } else if(query.has("error")||query.has("error_description")){
-      history.replaceState(null,"",location.pathname);
-      render("signed-out");show("Google no completó el inicio de sesión. Volvé a intentarlo.");return;
-    }
     login.onclick=async()=>{
       login.disabled=true;
       try{
@@ -60,6 +50,16 @@ async function init(){
       catch{render("error");show("No se pudo cerrar la sesión. Reintentá.");}
     };
     retry.onclick=refresh;
+    const query=new URLSearchParams(location.search);
+    if(query.has("code")){
+      const code=query.get("code");
+      history.replaceState(null,"",location.pathname);
+      const {error}=await client.auth.exchangeCodeForSession(code);
+      if(error){render("signed-out");show("No se pudo completar Google OAuth. Volvé a iniciar sesión.");return;}
+    } else if(query.has("error")||query.has("error_description")){
+      history.replaceState(null,"",location.pathname);
+      render("signed-out");show("Google no completó el inicio de sesión. Volvé a intentarlo.");return;
+    }
     client.auth.onAuthStateChange(()=>{setTimeout(refresh,0);});
     await refresh();
   }catch{show("No se pudo iniciar el módulo de acceso. Revisá configuración y navegador.");}
