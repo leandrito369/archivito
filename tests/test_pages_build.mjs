@@ -7,7 +7,7 @@ const dist=resolve("dist");
 const app=join(dist,"app");
 
 test("compilación Pages expone páginas de Archivito",async()=>{
-  for(const file of ["index.html","digitalizar.html","visor-3d.html","acceso.html"]){
+  for(const file of ["index.html","digitalizar.html","visor-3d.html","acceso.html","crypto-lab.html"]){
     const html=await readFile(join(app,file),"utf8");
     assert.match(html,/<html/);
     assert.ok(html.length>100);
@@ -32,7 +32,7 @@ test("no incluye dependencias completas, datos privados o respaldos",async()=>{
     "index.html","digitalizar.html","visor-3d.html","archive-v3.js",
     "capture-existing.js","paper-math.js","perspective.js",
     "visor-3d-data.js","visor-three.js","respaldo-v4.html",
-    "crypto-v4.js","backup-v4.js","acceso.html","auth-return.js","auth-entry.js"
+    "crypto-v4.js","backup-v4.js","acceso.html","auth-return.js","auth-entry.js","crypto-lab.html","crypto-lab.js"
   ]);
   const files=await readdir(app);
   assert.ok(files.length>=9);
@@ -51,4 +51,12 @@ test("acceso de Google empaquetado y retorno OAuth local",async()=>{
   assert.match(index,/auth-return\.js/);
   assert.doesNotMatch(bundle,/from\s*["']@supabase\/supabase-js["']/);
   assert.ok(bundle.length>10000);
+});
+
+test("laboratorio de cifrado empaquetado sin SDK remoto",async()=>{
+ const html=await readFile(join(app,"crypto-lab.html"),"utf8");
+ const bundle=await readFile(join(app,"crypto-lab.js"),"utf8");
+ assert.match(html,/crypto-lab\.js/);
+ assert.doesNotMatch(bundle,/supabase\.co|sb_publishable_/);
+ assert.match(bundle,/AES-GCM/);
 });
