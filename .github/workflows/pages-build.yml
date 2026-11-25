@@ -31,3 +31,4 @@ jobs:
           npm run test:session-key
           npm run test:sync
           npm run test:storage-adapter
+          npm run test:fixture-service

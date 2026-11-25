@@ -11,7 +11,8 @@
     "test:crypto": "node --test tests/test_shared_crypto.mjs",
     "test:session-key": "node --test tests/test_session_key.mjs",
     "test:sync": "node --test tests/test_sync_contract.mjs",
-    "test:storage-adapter": "node --test tests/test_sync_storage_adapter.mjs"
+    "test:storage-adapter": "node --test tests/test_sync_storage_adapter.mjs",
+    "test:fixture-service": "node --test tests/test_sync_fixture_service.mjs"
   },
   "dependencies": {
     "three": "0.187.0",
