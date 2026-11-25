@@ -26,3 +26,4 @@ jobs:
         run: |
           npm run build:pages
           npm run test:pages
+          npm run test:auth
