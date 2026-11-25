@@ -23,6 +23,14 @@
 <p id="key-fingerprint" style="overflow-wrap:anywhere;font-family:monospace"></p>
 <small>Durante esta etapa usá sólo una clave de prueba. La huella SHA-256 no es el código secreto. No publiques ni compartas el código por chat; guardalo fuera de Archivito. No hay carga de recuerdos.</small>
 </section>
-<small>Etapa de prueba: todavía no se suben ni sincronizan recuerdos. El archivo local es independiente de la cuenta Google.</small>
+<section id="fixture-panel" hidden style="border-top:1px solid #5f4c3c;margin-top:16px;padding-top:12px">
+<h2 style="font:24px Georgia,serif">Laboratorio de sincronización</h2>
+<small>Esta prueba genera una carta ficticia con frente y reverso. No selecciona archivos personales ni modifica tu biblioteca.</small>
+<button id="fixture-publish">Publicar muestra ficticia (propietario)</button>
+<button id="fixture-read">Recuperar muestra remota</button>
+<p id="fixture-status" role="status" aria-live="polite"></p>
+<p id="fixture-proof" style="overflow-wrap:anywhere"></p>
+</section>
+<small>Etapa de prueba: sólo se sincronizan muestras ficticias en un bucket separado. El archivo local es independiente de la cuenta Google.</small>
 <p><a href="./index.html">Abrir biblioteca local de este navegador</a></p>
 </main><script type="module" src="./auth-entry.js"></script></body></html>

@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { inspectKeyAccess, createSessionKeyGate } from "./session-key.mjs";
+import { createFixtureUI } from "./sync-fixture-ui.mjs";
 
 const status = document.querySelector("#status");
 const login = document.querySelector("#login");
@@ -10,7 +11,9 @@ const key = __ARCHIVITO_SUPABASE_PUBLISHABLE_KEY__;
 let client, seq = 0, gate, keyEpoch=0;
 const $=id=>document.getElementById(id);
 const keyStatus=$("key-status"), keyCode=$("key-code");
+const fixture=createFixtureUI({getClient:()=>client,getGate:()=>gate});
 function clearKeyPanel(){
+ fixture.clear();
  keyEpoch++;gate?.clear();$("key-panel").hidden=true;keyCode.value="";keyCode.type="password";$("key-show").checked=false;$("key-fingerprint").textContent="";keyStatus.textContent="";
 }
 function showKeyPanel(access){
@@ -22,6 +25,7 @@ function showKeyPanel(access){
  $("key-fingerprint").textContent=access.fingerprint?"Huella registrada: "+access.fingerprint:"";
 }
 async function keyAction(action){
+ fixture.clear();
  const e=++keyEpoch;
  $("key-generate").disabled=true;$("key-unlock").disabled=true;
  try{
@@ -34,7 +38,7 @@ async function keyAction(action){
   }else{
    const code=keyCode.value.trim();keyCode.value="";keyCode.type="password";$("key-show").checked=false;
    await gate.unlock(code);
-   if(e===keyEpoch)keyStatus.textContent="Clave verificada y desbloqueada en memoria. Sincronización deshabilitada.";
+   if(e===keyEpoch){keyStatus.textContent="Clave verificada y desbloqueada en memoria. Sólo laboratorio ficticio.";fixture.reveal();}
   }
  }catch{if(e===keyEpoch){keyCode.value="";keyStatus.textContent="Operación rechazada. Revisá la clave o volvé a comprobar el acceso.";}}
  finally{if(e===keyEpoch){$("key-generate").disabled=false;$("key-unlock").disabled=false;}}
@@ -42,7 +46,7 @@ async function keyAction(action){
 $("key-show").onchange=()=>{keyCode.type=$("key-show").checked?"text":"password";};
 $("key-generate").onclick=()=>keyAction("generate");
 $("key-unlock").onclick=()=>keyAction("unlock");
-$("key-lock").onclick=()=>{keyEpoch++;gate?.lock();keyCode.value="";keyCode.type="password";$("key-show").checked=false;$("key-generate").disabled=false;$("key-unlock").disabled=false;keyStatus.textContent="Clave bloqueada.";};
+$("key-lock").onclick=()=>{fixture.clear();keyEpoch++;gate?.lock();keyCode.value="";keyCode.type="password";$("key-show").checked=false;$("key-generate").disabled=false;$("key-unlock").disabled=false;keyStatus.textContent="Clave bloqueada.";};
 addEventListener("pagehide",()=>{++seq;clearKeyPanel();});
 function show(message){status.textContent = message;}
 function render(state){
@@ -64,7 +68,7 @@ async function refresh(){
     render(result.state);
     if(result.state==="signed-out")show("Iniciá sesión para solicitar acceso.");
     if(result.state==="denied")show("Cuenta autenticada, sin autorización para el archivo. El administrador debe habilitarla.");
-    if(result.state==="authorized"){show("Acceso autorizado ("+(result.role==="owner"?"propietario":"editor")+"). Sincronización aún deshabilitada.");showKeyPanel(result);}
+    if(result.state==="authorized"){show("Acceso autorizado ("+(result.role==="owner"?"propietario":"editor")+"). Sincronización real deshabilitada.");showKeyPanel(result);}
   }catch{
     if(token!==seq)return;
     render("error");show("No se pudo verificar el acceso. Reintentá con conexión a Internet.");

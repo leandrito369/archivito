@@ -32,6 +32,20 @@ export function createSessionKeyGate(readAccess){
  return {
   clear,lock,refresh,
   isUnlocked:()=>Boolean(unlocked),
+  async withUnlocked(work){
+   const {e,next}=await fresh();
+   if(!unlocked)throw Error("Clave bloqueada.");
+   const current=unlocked;
+   const authorize=async()=>{
+    if(e!==epoch||unlocked!==current)throw Error("Clave bloqueada.");
+    const again=await fresh();
+    if(e!==epoch||unlocked!==current)throw Error("Clave bloqueada.");
+    return {userId:again.next.userId,archiveId:again.next.archiveId,keyId:current.keyId,role:again.next.role,unlocked:true};
+   };
+   const value=await work(current,await authorize(),authorize);
+   await authorize();
+   return value;
+  },
   async candidate(){
    const {e,next}=await fresh();
    if(next.role!=="owner"||next.fingerprint!==null)throw Error("Configuración no disponible.");
