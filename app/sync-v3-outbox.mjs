@@ -44,7 +44,7 @@ export async function openV3Outbox({userId,archiveId,keyId}={}){
    const key=pk(remoteId);
    return run("readonly",async(h,j)=>{
     const b=await req(h.get(key)),job=await req(j.get(key));check(b);check(job);
-    return {base:b?.base??null,baseGeneration:b?.baseGeneration??null,pending:summary(job)};
+    return {base:b?.base??null,baseGeneration:b?.baseGeneration??null,pending:summary(job),pull:b?.pull??null};
    });
   },
   // Bind the snapshot's generation to the exact encrypted bytes. The caller
@@ -56,7 +56,7 @@ export async function openV3Outbox({userId,archiveId,keyId}={}){
    if(!Number.isSafeInteger(expected)||expected<0||expected===Number.MAX_SAFE_INTEGER||
       (base!==null&&(expected<1||!uuid(base.operationId))))fail();
    const pre=await this.status(remoteId);
-   if(!sameBase(pre.base,base))fail();
+   if(pre.pull||!sameBase(pre.base,base))fail();
    if(pre.pending){
     if(pre.pending.localId!==localId)fail();
     return {state:"existing",pending:pre.pending};
@@ -68,7 +68,7 @@ export async function openV3Outbox({userId,archiveId,keyId}={}){
    return run("readwrite",async(h,j,p)=>{
     const current=await req(h.get(pkey)),old=await req(j.get(pkey));
     check(current,localId);check(old,localId);
-    if(!sameBase(current?.base??null,base))fail();
+    if(current?.pull||!sameBase(current?.base??null,base))fail();
     if(old)return {state:"existing",pending:summary(old)};
     if(current?.baseGeneration===g)return {state:"unchanged"};
     // Only small metadata rows are loaded to check quota, not other ciphertext.
@@ -85,7 +85,7 @@ export async function openV3Outbox({userId,archiveId,keyId}={}){
    const now=Date.now(),row=rows.filter(x=>x.state==="pending"||x.state==="uploading"&&x.leaseUntil<=now).sort((a,b)=>a.createdAt-b.createdAt||a.remoteId.localeCompare(b.remoteId))[0];
    if(!row)return null;
    const k=pk(row.remoteId),baseline=await req(h.get(k));check(baseline,row.localId);
-   if(!sameBase(baseline?.base??null,row.base))fail();
+   if(baseline?.pull||!sameBase(baseline?.base??null,row.base))fail();
    const stored=await req(p.get(k));if(!stored)fail();
    const packet=validateV3Package(stored.packet);
    if(packet.keyId!==keyId||packet.archiveId!==archiveId||packet.memoryId!==row.remoteId||packet.operationId!==row.operationId||packet.revision!==row.revision)fail();
@@ -99,7 +99,7 @@ export async function openV3Outbox({userId,archiveId,keyId}={}){
    if(!result||!["synced","conflict","error"].includes(result.state))fail();
    if(result.state==="synced"){
     const current=await req(h.get(k));check(current,row.localId);
-    if(!sameBase(current?.base??null,row.base))fail();
+    if(current?.pull||!sameBase(current?.base??null,row.base))fail();
     const accepted=acceptPublishReceipt({receipt:result,operationId:row.operationId,expectedRevision:row.expectedRevision,encodedGeneration:row.encodedGeneration,currentGeneration:row.encodedGeneration});
     await req(h.put({scope,remoteId,localId:row.localId,keyId,base:accepted.base,baseGeneration:accepted.baseGeneration}));
     await req(j.delete(k));await req(p.delete(k));
@@ -110,6 +110,34 @@ export async function openV3Outbox({userId,archiveId,keyId}={}){
    }
    return true;
   });},
+  // Reserve an inbound revision before touching the separate library DB.
+  // No ciphertext or plaintext is persisted here; caller can refetch exact packet.
+  reservePull({remoteId,localId,base,baseGeneration,target,digest,expectedLocalGeneration}){
+   if(!local(localId)||!target||!uuid(target.operationId)||!Number.isSafeInteger(target.revision)||target.revision<1||
+      typeof digest!=="string"||!HEX.test(digest)||target.revision<=(base?.revision??0)||
+      expectedLocalGeneration!==baseGeneration||
+      (base===null?baseGeneration!==null:!uuid(baseGeneration)||!uuid(base.operationId)||!Number.isSafeInteger(base.revision)||base.revision<1))fail();
+   const k=pk(remoteId);
+   return run("readwrite",async(h,j)=>{
+    const current=await req(h.get(k)),job=await req(j.get(k));check(current,localId);check(job,localId);
+    if(job||!sameBase(current?.base??null,base)||(current?.baseGeneration??null)!==baseGeneration)fail();
+    if(current?.pull){
+     const x=current.pull;
+     if(!sameBase(x.target,target)||x.digest!==digest||x.expectedLocalGeneration!==expectedLocalGeneration)fail();
+     return x;
+    }
+    const pull={target:{revision:target.revision,operationId:target.operationId},digest,expectedLocalGeneration,newGeneration:crypto.randomUUID()};
+    await req(h.put({scope,remoteId,localId,keyId,base,baseGeneration,pull}));return pull;
+   });
+  },
+  finishPull({remoteId,localId,newGeneration,digest}){
+   return run("readwrite",async(h,j)=>{
+    const k=pk(remoteId),row=await req(h.get(k));check(row,localId);
+    if(!row?.pull||row.pull.newGeneration!==newGeneration||row.pull.digest!==digest||await req(j.get(k)))fail();
+    await req(h.put({scope,remoteId,localId,keyId,base:row.pull.target,baseGeneration:newGeneration}));
+    return {base:row.pull.target,baseGeneration:newGeneration};
+   });
+  },
   retry(remoteId){return run("readwrite",async(h,j)=>{
    const k=pk(remoteId),row=await req(j.get(k));check(row);
    if(!row||row.state!=="error")return false;
