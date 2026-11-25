@@ -1,0 +1,60 @@
+import {test} from "node:test";
+import assert from "node:assert/strict";
+import {webcrypto,randomUUID} from "node:crypto";
+if(!globalThis.crypto?.subtle)Object.defineProperty(globalThis,"crypto",{value:webcrypto,configurable:true});
+import {generateRecoveryCode,unlockRecoveryCode} from "../app/shared-crypto.mjs";
+import {encodeV3Record,decodeV3Record} from "../app/sync-v3-contract.mjs";
+import {planReconciliation,acceptPublishReceipt,createV3RevisionTransport} from "../app/sync-v3-revisions.mjs";
+const id=randomUUID;
+const makeRecord=(title="Carta ficticia")=>({id:"local-fixture",schemaVersion:3,kind:"letter",title,date:"",from:"",to:"",note:"",tags:[],favorite:false,createdAt:"2026-11-25",updatedAt:"2026-11-25",pages:[{id:"p1",caption:"",front:new Blob([new Uint8Array([1,2,3])],{type:"image/png"}),back:null,frontDerived:null,backDerived:null,frontCrop:null,backCrop:null}]});
+const tools={validateImage:async()=>{},makeThumb:async b=>b};
+const h=p=>({revision:p.revision,operationId:p.operationId});
+test("decision matrix: new, import, clean, pull, conflict, rollback, missing and equivocation",()=>{
+ const g=id(),g2=id(),b={revision:1,operationId:id()},r={revision:2,operationId:id()};
+ assert.equal(planReconciliation({base:null,remote:null,localGeneration:g,baseGeneration:null}).action,"publish");
+ assert.equal(planReconciliation({base:null,remote:b,localGeneration:null,baseGeneration:null}).action,"import");
+ const state={base:b,baseGeneration:g,localGeneration:g,remote:b};
+ assert.equal(planReconciliation(state).action,"noop");
+ assert.equal(planReconciliation({...state,remote:r}).action,"pull");
+ assert.equal(planReconciliation({...state,localGeneration:g2}).action,"publish");
+ assert.equal(planReconciliation({...state,remote:r,localGeneration:g2}).action,"conflict");
+ assert.equal(planReconciliation({...state,remote:null}).reason,"remote-rollback");
+ assert.equal(planReconciliation({...state,remote:{...b,operationId:id()}}).reason,"remote-equivocation");
+ assert.equal(planReconciliation({...state,localGeneration:null}).reason,"local-missing");
+});
+test("A publishes, B edits, A pulls; original and revisions remain available",async()=>{
+ const code=await generateRecoveryCode(),a=await unlockRecoveryCode(code),b=await unlockRecoveryCode(code),t=createV3RevisionTransport();
+ const c={archiveId:id(),memoryId:id(),operationId:id(),revision:1},one=await encodeV3Record(a,c,makeRecord());
+ const receipt=await t.publish(one,0),g=id();assert.equal(acceptPublishReceipt({receipt,operationId:c.operationId,expectedRevision:0,encodedGeneration:g,currentGeneration:g}).dirty,false);
+ const incoming=await decodeV3Record(b,c,t.latest(c.archiveId,c.memoryId),tools);
+ const c2={...c,operationId:id(),revision:2},two=await encodeV3Record(b,c2,{...incoming,title:"Edición de B"});
+ assert.equal((await t.publish(two,1)).state,"synced");
+ assert.equal(planReconciliation({base:h(one),remote:h(two),localGeneration:g,baseGeneration:g}).action,"pull");
+ assert.equal((await decodeV3Record(a,c2,t.latest(c.archiveId,c.memoryId),tools)).title,"Edición de B");
+ assert.equal((await decodeV3Record(a,c,t.readRevision(c.archiveId,c.memoryId,1),tools)).title,"Carta ficticia");
+});
+test("concurrent edits yield one winner, one conflict, and no silent replacement",async()=>{
+ const k=await unlockRecoveryCode(await generateRecoveryCode()),t=createV3RevisionTransport(),c={archiveId:id(),memoryId:id(),operationId:id(),revision:1};
+ const p=await encodeV3Record(k,c,makeRecord());await t.publish(p,0);
+ const a=await encodeV3Record(k,{...c,revision:2,operationId:id()},makeRecord("A"));
+ const b=await encodeV3Record(k,{...c,revision:2,operationId:id()},makeRecord("B"));
+ const r=await Promise.all([t.publish(a,1),t.publish(b,1)]);
+ assert.equal(r.filter(x=>x.state==="synced").length,1);assert.equal(r.filter(x=>x.state==="conflict").length,1);
+ const loser=r[0].state==="conflict"?a:b,winner=t.latest(c.archiveId,c.memoryId);
+ assert.notEqual(loser.operationId,winner.operationId);
+ assert.equal(planReconciliation({base:h(p),remote:h(winner),baseGeneration:id(),localGeneration:id()}).action,"conflict");
+ assert.equal(loser.revision,2);
+});
+test("exact retry after newer revision returns original receipt; different ciphertext rejected",async()=>{
+ const k=await unlockRecoveryCode(await generateRecoveryCode()),t=createV3RevisionTransport(),c={archiveId:id(),memoryId:id(),operationId:id(),revision:1};
+ const p=await encodeV3Record(k,c,makeRecord());await t.publish(p,0);
+ await t.publish(await encodeV3Record(k,{...c,revision:2,operationId:id()},makeRecord("new")),1);
+ assert.deepEqual(await t.publish(p,0),{state:"synced",operationId:c.operationId,revision:1,replayed:true});
+ await assert.rejects(t.publish(await encodeV3Record(k,c,makeRecord("different")),0));
+});
+test("later local edit stays dirty after receipt; mismatched receipt rejected",()=>{
+ const op=id(),g=id(),current=id(),receipt={state:"synced",operationId:op,revision:3,replayed:true};
+ const r=acceptPublishReceipt({receipt,operationId:op,expectedRevision:2,encodedGeneration:g,currentGeneration:current});
+ assert.equal(r.dirty,true);assert.equal(r.baseGeneration,g);
+ assert.throws(()=>acceptPublishReceipt({receipt,operationId:id(),expectedRevision:2,encodedGeneration:g,currentGeneration:current}));
+});
