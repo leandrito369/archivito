@@ -7,7 +7,8 @@
     "test:paper": "node --test tests/test_paper_math.cjs",
     "build:pages": "node scripts/build-pages.mjs",
     "test:pages": "node --test tests/test_pages_build.mjs",
-    "test:auth": "node --test tests/test_auth_access.mjs"
+    "test:auth": "node --test tests/test_auth_access.mjs",
+    "test:crypto": "node --test tests/test_shared_crypto.mjs"
   },
   "dependencies": {
     "three": "0.187.0",
