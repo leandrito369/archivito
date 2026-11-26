@@ -6,7 +6,7 @@ const HEX=/^[0-9a-f]{64}$/;
 const uuid=x=>typeof x==="string"&&UUID.test(x),hex=x=>typeof x==="string"&&HEX.test(x);
 const fail=()=>{throw Error("Transporte incremental rechazado; conservar operación pendiente.");};
 const sameRef=(a,b)=>a&&b&&["id","born","size","nonce","cipherSha256"].every(k=>a[k]===b[k]);
-export function createIncrementalRemote({client,url,publishableKey,scope,authorize,localGuard,fetcher=globalThis.fetch,enabled=false,metrics,onProgress,timeoutMs=120000}={}){
+export function createIncrementalRemote({client,url,publishableKey,scope,authorize,localGuard,fetcher=globalThis.fetch,enabled=false,metrics,onProgress,timeoutMs=120000,fenced=false}={}){
  if(!client||!/^https:\/\/[a-z0-9]+\.supabase\.co$/.test(url||"")||!/^sb_publishable_[a-zA-Z0-9_-]+$/.test(publishableKey||"")||
  !uuid(scope?.userId)||!uuid(scope?.archiveId)||!hex(scope?.keyId)||typeof authorize!=="function"||typeof fetcher!=="function"||
  localGuard!==undefined&&typeof localGuard!=="function"||!Number.isSafeInteger(timeoutMs)||timeoutMs<1||timeoutMs>120000)fail();
@@ -17,7 +17,7 @@ export function createIncrementalRemote({client,url,publishableKey,scope,authori
  async function ioGuard(){if(localGuard)check(localGuard());else await guard();}
  function progress(phase,done,total){try{onProgress?.({phase,done,total});}catch{}}
  function scopeHeader(h){if(h.archiveId!==s.archiveId||h.keyId!==s.keyId)fail();}
- async function request(action,body,{block,binarySize,signal,assertLease}={}){
+ async function request(action,body,{block,binarySize,signal,assertLease,fence}={}){
   if(assertLease)await assertLease();
   await ioGuard();
   const {data,error}=await client.auth.getSession(),session=data?.session;
@@ -33,7 +33,9 @@ export function createIncrementalRemote({client,url,publishableKey,scope,authori
   const timer=setTimeout(cancel,timeoutMs);
   try{
    const value=await measure(action,async()=>{
-    const res=await fetcher(endpoint.href,{method:"POST",headers:{authorization:"Bearer "+session.access_token,apikey:publishableKey,"content-type":block?"application/octet-stream":"application/json"},body:block?block.bytes:JSON.stringify(body),cache:"no-store",redirect:"error",signal:controller.signal});
+    const headers={authorization:"Bearer "+session.access_token,apikey:publishableKey,"content-type":block?"application/octet-stream":"application/json"};
+    if(fence){headers["x-archivito-generation"]=String(fence.generation);headers["x-archivito-fence"]=fence.token;}
+    const res=await fetcher(endpoint.href,{method:"POST",headers,body:block?block.bytes:JSON.stringify(body),cache:"no-store",redirect:"error",signal:controller.signal});
     if(!res.ok)fail();
     if(binarySize!==undefined){
      if(res.headers.get("content-type")?.split(";")[0]!=="application/octet-stream")fail();
@@ -62,7 +64,13 @@ export function createIncrementalRemote({client,url,publishableKey,scope,authori
    if(assertLease!==undefined&&typeof assertLease!=="function")fail();
    await guard();
    const w=structuredClone(input),h=validateIncrementalWire(w);scopeHeader(h);if(typeof readChunk!=="function")fail();
-   const start=await request("begin",w,{signal,assertLease}),terminal=receipt(start,h);
+   let start,fence;
+   if(fenced){
+    const acquired=await request("claim",w,{signal,assertLease});
+    if(!acquired||!Number.isSafeInteger(acquired.generation)||acquired.generation<1||!uuid(acquired.token))fail();
+    fence={generation:acquired.generation,token:acquired.token};start=acquired.result;
+   }else start=await request("begin",w,{signal,assertLease});
+   const terminal=receipt(start,h);
    if(terminal){await guard();return terminal;}
    const known=new Set(w.uploads.map(x=>x.id));
    if(start.state!=="staging"||!Array.isArray(start.verifiedAssets)||new Set(start.verifiedAssets).size!==start.verifiedAssets.length||start.verifiedAssets.some(x=>!known.has(x)))fail();
@@ -72,16 +80,16 @@ export function createIncrementalRemote({client,url,publishableKey,scope,authori
     for(const b of u.chunks){
      const bytes=await readChunk(b.path);if(!(bytes instanceof Uint8Array)||bytes.length!==b.size)fail();
      const snapshot=bytes.slice();if(await sha256Hex(snapshot)!==b.sha256)fail();
-     const r=await request("block",null,{block:{archiveId:h.archiveId,operationId:h.operationId,path:b.path,bytes:snapshot},signal,assertLease});
+     const r=await request("block",null,{block:{archiveId:h.archiveId,operationId:h.operationId,path:b.path,bytes:snapshot},signal,assertLease,fence});
      const end=receipt(r,h);if(end){await guard();return end;}
      if(r.state!=="stored"||r.path!==b.path)fail();
     }
-    const r=await request("attest",{archiveId:h.archiveId,operationId:h.operationId,assetId:u.id},{signal,assertLease});
+    const r=await request("attest",{archiveId:h.archiveId,operationId:h.operationId,assetId:u.id},{signal,assertLease,fence});
     const end=receipt(r,h);if(end){await guard();return end;}
     if(r.state!=="verified"||r.assetId!==u.id)fail();
     await guard();progress("upload",++done,total);
    }
-   progress("commit",done,total);const end=receipt(await request("commit",w,{signal,assertLease}),h);
+   progress("commit",done,total);const end=receipt(await request("commit",w,{signal,assertLease,fence}),h);
    if(!end)fail();await guard();return end;
   },
   async manifest(memoryId,operationId=null,{signal}={}){
