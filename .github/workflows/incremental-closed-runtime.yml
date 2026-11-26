@@ -35,8 +35,8 @@ jobs:
       - name: Cache pinned SDK and check actual entrypoint
         run: |
           deno --version
-          deno cache supabase/functions/archivito-sync-incremental/index.ts
-          deno check --cached-only supabase/functions/archivito-sync-incremental/index.ts
+          deno cache --node-modules-dir=none supabase/functions/archivito-sync-incremental/index.ts
+          deno check --node-modules-dir=none --cached-only supabase/functions/archivito-sync-incremental/index.ts
       - name: Actual Deno HTTP and closed PostgreSQL RPC (local doubles for Auth and REST)
         env:
           PG_CONTAINER: ${{ job.services.postgres.id }}
