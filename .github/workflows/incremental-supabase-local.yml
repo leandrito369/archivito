@@ -1,0 +1,34 @@
+name: Supabase local — closed candidate stack
+on:
+  pull_request:
+    paths:
+      - 'tests/remote/test_supabase_local_closed_stack.py'
+      - 'docs/sql/cloud_03_5c3b*.sql'
+      - 'supabase/functions/archivito-sync-incremental/**'
+      - 'server/sync-incremental*.mjs'
+      - 'app/sync-incremental*.mjs'
+      - 'app/shared-crypto.mjs'
+      - 'app/sync-v3-contract.mjs'
+      - '.github/workflows/incremental-supabase-local.yml'
+permissions:
+  contents: read
+jobs:
+  supabase-local:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ARCHIVITO_DISPOSABLE_LAB: supabase-e3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.122.0
+      - name: Verify CLI, Docker and Python
+        run: |
+          supabase --version
+          docker version --format '{{.Server.Version}}'
+          python3 -m py_compile tests/remote/test_supabase_local_closed_stack.py
+      - name: Run local stack without hosted credentials
+        run: python3 tests/remote/test_supabase_local_closed_stack.py
