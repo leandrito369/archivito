@@ -38,7 +38,11 @@ Deno.serve(async req=>{
    upload:async(path:string,bytes:Uint8Array)=>{const {error}=await bucket.upload(path,bytes,{upsert:false,contentType:"application/octet-stream"});if(error)throw Error("upload");},
    download:async(path:string,size:number)=>{const {data,error}=await bucket.download(path);if(error||!data)return null;if(data.size!==size)throw Error("size");return new Uint8Array(await data.arrayBuffer());}
   });
-  if(action==="download")return new Response(result as Uint8Array,{status:200,headers:{...headers,"Content-Type":"application/octet-stream"}});
+  if(action==="download"){
+   if(!(result instanceof Uint8Array))throw Error("download bytes");
+   // Own ArrayBuffer for BodyInit (Deno/TypeScript typed-array generics).
+   return new Response(new Uint8Array(result).buffer,{status:200,headers:{...headers,"Content-Type":"application/octet-stream"}});
+  }
   return json(200,result);
  }catch{return json(403,{error:"rejected"});}
 });
