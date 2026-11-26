@@ -35,3 +35,4 @@ jobs:
           npm run test:fixture-read
           npm run test:sync-v3
           npm run test:sync-revisions
+          npm run test:sync-wire
