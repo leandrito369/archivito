@@ -211,11 +211,14 @@ class Lab:
           insert into public.archives(id,key_fingerprint) values({ar},{k});
           insert into public.archive_members(archive_id,user_id,role) values({ar},{a},'owner'),({ar},{b},'editor');
           insert into archivito_inc.gates(archive_id,enabled,quota_bytes) values({ar},false,67108864);
-          insert into {SC}.windows values({lit(str(uuid.uuid4()))},{ar},{a},{b},{k},clock_timestamp(),clock_timestamp()+interval '15 minutes',false,67108864,24);
+          insert into {SC}.windows values({lit(str(uuid.uuid4()))},{ar},{a},{b},{k},statement_timestamp(),statement_timestamp()+interval '15 minutes',false,67108864,24);
           notify pgrst,'reload schema';
           commit;
         """)
         passed("actual managed Auth/Storage tables and candidate DDL installed locally")
+        # Regression against the actual inserted fixture and its validated CHECK.
+        require(self.sql(f"select count(*)=1 and coalesce(bool_and(expires_at-opened_at=interval '15 minutes' and not enabled),false) from {SC}.windows where archive_id={ar};")=="t","deterministic closed fixture window duration")
+        passed("fixture window regression: exactly 15 minutes and closed")
     def audit(self,expected_sessions):
         ar=lit(ARCHIVE)
         q=f"""select
