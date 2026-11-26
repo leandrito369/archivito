@@ -17,7 +17,8 @@ export function createIncrementalRemote({client,url,publishableKey,scope,authori
  async function ioGuard(){if(localGuard)check(localGuard());else await guard();}
  function progress(phase,done,total){try{onProgress?.({phase,done,total});}catch{}}
  function scopeHeader(h){if(h.archiveId!==s.archiveId||h.keyId!==s.keyId)fail();}
- async function request(action,body,{block,binarySize,signal}={}){
+ async function request(action,body,{block,binarySize,signal,assertLease}={}){
+  if(assertLease)await assertLease();
   await ioGuard();
   const {data,error}=await client.auth.getSession(),session=data?.session;
   if(error||session?.user?.id!==s.userId||typeof session.access_token!=="string"||!session.access_token)fail();
@@ -25,6 +26,7 @@ export function createIncrementalRemote({client,url,publishableKey,scope,authori
   endpoint.searchParams.set("action",action);
   if(block)for(const k of ["archiveId","operationId","path"])endpoint.searchParams.set(k,block[k]);
   await ioGuard();
+  if(assertLease)await assertLease();
   const controller=new AbortController(),cancel=()=>controller.abort();
   if(signal?.aborted)fail();
   signal?.addEventListener("abort",cancel,{once:true});
@@ -44,7 +46,7 @@ export function createIncrementalRemote({client,url,publishableKey,scope,authori
     const bytes=new Uint8Array(n);let off=0;for(const part of parts){bytes.set(part,off);off+=part.length;}
     return JSON.parse(new TextDecoder("utf-8",{fatal:true}).decode(bytes));
    },block?.bytes.length??binarySize??0);
-   await ioGuard();return value;
+   await ioGuard();if(assertLease)await assertLease();if(signal?.aborted)fail();return value;
   }finally{clearTimeout(timer);signal?.removeEventListener("abort",cancel);}
  }
  function receipt(r,h){
@@ -56,10 +58,11 @@ export function createIncrementalRemote({client,url,publishableKey,scope,authori
  return {
   // Exact wire and exact chunk reader can be persisted independently of this adapter.
   // Aborted requests may already have reached the server. Never regenerate the operation.
-  async publish(input,readChunk,{signal}={}){
+  async publish(input,readChunk,{signal,assertLease}={}){
+   if(assertLease!==undefined&&typeof assertLease!=="function")fail();
    await guard();
    const w=structuredClone(input),h=validateIncrementalWire(w);scopeHeader(h);if(typeof readChunk!=="function")fail();
-   const start=await request("begin",w,{signal}),terminal=receipt(start,h);
+   const start=await request("begin",w,{signal,assertLease}),terminal=receipt(start,h);
    if(terminal){await guard();return terminal;}
    const known=new Set(w.uploads.map(x=>x.id));
    if(start.state!=="staging"||!Array.isArray(start.verifiedAssets)||new Set(start.verifiedAssets).size!==start.verifiedAssets.length||start.verifiedAssets.some(x=>!known.has(x)))fail();
@@ -69,16 +72,16 @@ export function createIncrementalRemote({client,url,publishableKey,scope,authori
     for(const b of u.chunks){
      const bytes=await readChunk(b.path);if(!(bytes instanceof Uint8Array)||bytes.length!==b.size)fail();
      const snapshot=bytes.slice();if(await sha256Hex(snapshot)!==b.sha256)fail();
-     const r=await request("block",null,{block:{archiveId:h.archiveId,operationId:h.operationId,path:b.path,bytes:snapshot},signal});
+     const r=await request("block",null,{block:{archiveId:h.archiveId,operationId:h.operationId,path:b.path,bytes:snapshot},signal,assertLease});
      const end=receipt(r,h);if(end){await guard();return end;}
      if(r.state!=="stored"||r.path!==b.path)fail();
     }
-    const r=await request("attest",{archiveId:h.archiveId,operationId:h.operationId,assetId:u.id},{signal});
+    const r=await request("attest",{archiveId:h.archiveId,operationId:h.operationId,assetId:u.id},{signal,assertLease});
     const end=receipt(r,h);if(end){await guard();return end;}
     if(r.state!=="verified"||r.assetId!==u.id)fail();
     await guard();progress("upload",++done,total);
    }
-   progress("commit",done,total);const end=receipt(await request("commit",w,{signal}),h);
+   progress("commit",done,total);const end=receipt(await request("commit",w,{signal,assertLease}),h);
    if(!end)fail();await guard();return end;
   },
   async manifest(memoryId,operationId=null,{signal}={}){
