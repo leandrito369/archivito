@@ -57,7 +57,12 @@ class Lab:
         # Never print subprocess output (CLI status/start may contain keys).
         r=subprocess.run(args,cwd=self.work,env=self.env,input=stdin,text=True,
                          capture_output=True,timeout=timeout)
-        if not allow_fail and r.returncode: raise Stop("command failed: "+args[0]+" "+args[1])
+        if not allow_fail and r.returncode:
+            # SQL error text is generated exclusively from synthetic local SQL.
+            if args[:2]==["docker","exec"]:
+                detail=next((x for x in r.stderr.splitlines() if x.startswith("ERROR:")),None)
+                if detail: print("LOCAL SQL "+detail[:240],flush=True)
+            raise Stop("command failed: "+args[0]+" "+args[1])
         return r
     def docker(self,*args,**kw):return self.cmd(["docker",*args],**kw)
     def sql(self,q,allow_fail=False):
@@ -99,6 +104,7 @@ class Lab:
         passed("fresh project configuration and isolated Edge package")
     def start(self):
         self.started=True
+        print("PHASE starting pinned local Docker services",flush=True)
         self.cmd(["supabase","start"],timeout=1200)
         require(self.docker("inspect","--format","{{.Name}}",self.db).stdout.strip()=="/"+self.db,"wrong DB container")
         names=self.docker("ps","--filter","name="+self.project,"--format","{{.Names}} {{.Image}}").stdout.splitlines()
@@ -194,6 +200,13 @@ class Lab:
           and not exists(select 1 from archivito_inc.heads)
           and not exists(select 1 from storage.objects where bucket_id='{BUCKET}')
           and exists(select 1 from storage.buckets where id='{BUCKET}' and not public and file_size_limit=4194304 and allowed_mime_types=array['application/octet-stream'])
+          and (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
+               where c.relrowsecurity and ((n.nspname='archivito_inc' and c.relkind='r') or
+               (n.nspname,c.relname) in (('auth','sessions'),('public','archives'),('public','archive_members'),('storage','objects'))))=12
+          and not has_column_privilege('archivito_cert_executor','auth.sessions','not_after','UPDATE')
+          and not has_column_privilege('archivito_cert_executor','public.archives','key_fingerprint','UPDATE')
+          and not has_column_privilege('archivito_cert_executor','public.archive_members','role','UPDATE')
+          and not has_table_privilege('archivito_cert_executor','storage.objects','INSERT,UPDATE,DELETE,TRUNCATE')
           and not has_schema_privilege('service_role','archivito_inc','USAGE')
           and not has_function_privilege('service_role','public.sync_inc_step(uuid,text,jsonb,uuid,text)','EXECUTE')
           and not has_function_privilege('service_role','public.sync_inc_inspect(uuid,uuid,text,uuid,uuid,uuid)','EXECUTE')
@@ -221,6 +234,20 @@ class Lab:
         require(status==200 and u.get("id")==self.users[label],"Auth getUser "+label)
         require(self.sql(f"select exists(select 1 from auth.sessions where id={lit(session)} and user_id={lit(self.users[label])});")=="t","managed session "+label)
         return token,session
+    def managed_context(self,label,session,revoked=False):
+        # Exercise the actual managed rows separately; the closed window in
+        # dispatch otherwise short-circuits these locks. No data returned.
+        role="owner" if label=="A" else "editor"
+        q=f"""begin;
+          set local role archivito_cert_executor;
+          select 1 from {SC}.windows where archive_id={lit(ARCHIVE)} for update;
+          select {SC}.lock_actor_context({lit(self.users[label])},{lit(session)},{lit(ARCHIVE)},{lit(role)},{lit(KEY)});
+          rollback;"""
+        r=self.sql(q,allow_fail=True)
+        if revoked:require(r.returncode!=0 and "certification session denied" in r.stderr,"revoked managed session "+label)
+        elif label=="C":require(r.returncode!=0 and "certification membership denied" in r.stderr,"managed outsider denial")
+        else:require(r.returncode==0,"managed actor context "+label)
+        passed(("revoked " if revoked else "")+"managed context "+label)
     def negative(self,status,d,case):
         require(status in (401,403,404) and isinstance(d,dict) and d.get("code") in ("42501","PGRST202"),case)
         passed(case+" HTTP "+str(status))
@@ -231,6 +258,7 @@ class Lab:
             token,session=self.login(label)
             self.audit(1)
             try:
+                self.managed_context(label,session)
                 args={"p_actor":self.users[label],"p_session":session,"p_action":"head","p_archive":ARCHIVE,"p_memory":MEMORY}
                 # Confirm real PostgREST resolved the correct signature and
                 # executed the SQL guard, not a missing function or gateway error.
@@ -258,6 +286,7 @@ class Lab:
                 status,_,_=self.request("/auth/v1/logout?scope=local",self.anon,token,{},method="POST")
                 require(status in (200,204),"local logout "+label)
             self.audit(0)
+            self.managed_context(label,session,revoked=True)
         status,_,d=self.request("/storage/v1/object/list/"+BUCKET,self.service,self.service,
                                  {"prefix":"","limit":100,"offset":0})
         require(status==200 and d==[],"real Storage list not empty")
