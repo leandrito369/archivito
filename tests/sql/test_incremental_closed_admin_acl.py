@@ -18,6 +18,9 @@ HELPER=f"{SC}.lock_actor_context(uuid,uuid,uuid,text,text)"
 def context(actor=A,session=SA,role="owner",key=K):
     return (f"set role {EXEC}; select id from {SC}.windows where id={W} for update;"
             f"select {SC}.lock_actor_context({actor},{session},{AR},{lit(role)},{key});")
+def check_context(*args, error=None):
+    return run('begin;'+context(*args)+'commit;',error=error)
+
 def restore_member():
     run(f"insert into public.archive_members values({AR},{A},'owner');")
 def restore_session():
@@ -66,10 +69,10 @@ def check_lock_only():
         run(f"create policy lab_permissive on {table} for update to {EXEC} using(true) with check(true);")
         run(f"set role {EXEC}; update {table} set {assignment} where {where};",error="row-level security policy")
         run(f"drop policy lab_permissive on {table};")
-    run(context())
-    run(context(B,SB,"editor"))
-    run(context(A,SB),error="certification session denied")
-    run(context(B,SB,"owner"),error="certification membership denied")
+    check_context()
+    check_context(B,SB,"editor")
+    check_context(A,SB,error="certification session denied")
+    check_context(B,SB,"owner",error="certification membership denied")
     print("PASS restrictive RLS prevents mutation even with permissive policy; row locks and identity checks work",flush=True)
 
 def admin_wins(mutation,error,restore,tag):
@@ -106,10 +109,10 @@ def main():
     h=hold(context())
     p=waiter(f"delete from auth.sessions where id={SA};")
     release(h);finish(p)
-    run(context(),error="certification session denied");restore_session()
+    check_context(error="certification session denied");restore_session()
     print("PASS logout linearization in both orders; subsequent context rejected",flush=True)
     run(f"update auth.sessions set not_after=clock_timestamp()-interval '1 second' where id={SA};")
-    run(context(),error="certification session denied")
+    check_context(error="certification session denied")
     run(f"update auth.sessions set not_after=null where id={SA};")
     # Window remains closed; actual dispatch must never return data.
     run(f"set role service_role; select public.sync_inc_cert_http({A},{SA},'head',{AR},p_memory=>{lit('73ac551b-2df8-4da7-91b8-4adf18d83901')});",error="certification denied")
