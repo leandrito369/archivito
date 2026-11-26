@@ -11,6 +11,7 @@ import sys
 import urllib.error
 import urllib.request
 import uuid
+import warnings
 
 BASE = "https://pjzathwsanxenmjmeizg.supabase.co"
 ORIGIN = "http://localhost:8000"
@@ -55,6 +56,7 @@ def main():
         archive = str(uuid.UUID(input("Dedicated synthetic archive UUID (never personal archive): ").strip()))
     except ValueError:
         raise SystemExit("Invalid UUID") from None
+    warnings.simplefilter('error', getpass.GetPassWarning)
     key = getpass.getpass("Project publishable key (sb_publishable_...): ").strip()
     if not re.fullmatch(r"sb_publishable_[A-Za-z0-9_-]+", key):
         raise SystemExit("Only publishable keys accepted")
