@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'tests/sql/test_incremental_closed_runtime.py'
+      - 'tests/sql/test_incremental_closed_admin_acl.py'
       - 'tests/sql/test_incremental_cert_multisession.py'
       - 'docs/sql/cloud_03_5c3b*.sql'
       - 'supabase/functions/archivito-sync-incremental/**'
@@ -44,3 +45,4 @@ jobs:
         run: |
           docker exec "$PG_CONTAINER" createdb -U postgres archivito_cert_lab
           python3 tests/sql/test_incremental_closed_runtime.py
+          python3 tests/sql/test_incremental_closed_admin_acl.py
