@@ -138,6 +138,37 @@ class Lab:
     def edge(self,token,action="manifest",body=None,extra=None,method=None):
         return self.request("/functions/v1/"+FUNCTION+"?action="+action,self.anon,token,
            body,method,{"Origin":ORIGIN,**(extra or {})})
+    def edge_diagnostics(self,case,status,h,d):
+        # Report only response classifications, never raw headers/bodies or
+        # container environment. The runner owns these synthetic containers.
+        safe_codes={"BOOT_ERROR","WORKER_ERROR","WORKER_RESOURCE_LIMIT","NOT_FOUND",
+                    "UNAUTHORIZED","FUNCTION_NOT_FOUND","FUNCTION_ERROR","JWT_ERROR","INVALID_JWT"}
+        code=h.get("sb-error-code","")
+        if code not in safe_codes: code="other" if code else "absent"
+        origins=h.get_all("Access-Control-Allow-Origin") or []
+        cache=h.get_all("Cache-Control") or []
+        print("EDGE_DIAG "+json.dumps({"case":case,"status":status,
+              "error_code":code,"generic_rejection":d=={"error":"rejected"},
+              "body_kind":"json-object" if isinstance(d,dict) else "other",
+              "cors_count":len(origins),"cors_exact":origins==[ORIGIN],
+              "cors_wildcard":"*" in origins,"cache_count":len(cache),
+              "cache_exact":cache==["no-store"]}),flush=True)
+        r=self.docker("logs","--tail","120","supabase_edge_runtime_"+self.project,allow_fail=True)
+        log=r.stdout+"\n"+r.stderr
+        # Known failure classes only; do not forward arbitrary log lines.
+        patterns={"boot":r"boot.error|failed to boot|worker boot",
+                  "import_resolution":r"module not found|cannot find module|failed to resolve|failed to load|module resolution|import map",
+                  "npm":r"npm:|npm package|npm registry",
+                  "network":r"connection refused|dns error|network error|failed to fetch",
+                  "jwt":r"invalid jwt|jwt verification|jwt expired",
+                  "runtime_exception":r"uncaught|typeerror|referenceerror|syntaxerror",
+                  "worker_timeout":r"worker did not respond|timed out|timeout",
+                  "permission":r"permission denied|not permitted"}
+        print("EDGE_RUNTIME_DIAG "+json.dumps({k:bool(re.search(v,log,re.I)) for k,v in patterns.items()}),flush=True)
+    def check_edge(self,case,status,h,d,expected):
+        ok=status==expected and d=={"error":"rejected"} and h.get("Cache-Control")=="no-store" and h.get("Access-Control-Allow-Origin")==ORIGIN
+        if not ok:self.edge_diagnostics(case,status,h,d)
+        require(ok,case)
     def rpc(self,name,key,token,args):
         return self.request("/rest/v1/rpc/"+name,key,token,args)
     def provision(self):
@@ -253,6 +284,11 @@ class Lab:
         passed(case+" HTTP "+str(status))
     def probe(self):
         self.audit(0)
+        # GET is handled before authentication: distinguishes boot/gateway from
+        # the closed manifest RPC without weakening authorization.
+        status,h,d=self.edge(self.anon,method="GET")
+        self.check_edge("Edge startup method rejection",status,h,d,405)
+        passed("real Edge startup method rejection")
         q={"archiveId":ARCHIVE,"memoryId":MEMORY,"operationId":None}
         for label in "ABC":
             token,session=self.login(label)
@@ -276,7 +312,7 @@ class Lab:
                     {"p_actor":self.users[label],"p_archive":ARCHIVE,"p_action":"head","p_memory":MEMORY})
                 self.negative(status,d,"legacy inspect denied "+label)
                 status,h,d=self.edge(token,body=q)
-                require(status==403 and d=={"error":"rejected"} and h.get("Cache-Control")=="no-store" and h.get("Access-Control-Allow-Origin")==ORIGIN,"real Edge manifest "+label)
+                self.check_edge("real Edge manifest "+label,status,h,d,403)
                 passed("actual Edge Runtime closed manifest "+label)
                 status,_,d=self.request("/storage/v1/object/"+BUCKET+"/synthetic-denied-"+label,self.anon,token,b"synthetic",
                     method="POST",extra={"Content-Type":"application/octet-stream","x-upsert":"false"})
