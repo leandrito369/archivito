@@ -3,6 +3,7 @@ on:
   pull_request:
     paths:
       - 'tests/remote/probe_incremental_closed_http.py'
+      - 'tests/remote/probe_incremental_authenticated_closed.py'
       - '.github/workflows/incremental-closed-http.yml'
   workflow_dispatch:
 permissions:
@@ -15,6 +16,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+      - name: Check manual probe syntax without executing it
+        run: python3 -m py_compile tests/remote/probe_incremental_authenticated_closed.py
       - name: Probe deployed v1 without valid credentials
         env:
           ARCHIVITO_CERT_URL: https://pjzathwsanxenmjmeizg.supabase.co/functions/v1/archivito-sync-incremental
