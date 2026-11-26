@@ -114,3 +114,56 @@ class IncrementalLocalTests(unittest.TestCase):
             self.assertNotIn("nuestro-archivo-cartas-v1",result["dbs"])
         finally:
             ctx.close()
+
+    def test_expired_lease_corrupt_queue_cache_and_page_close(self):
+        ctx=self.browser.new_context()
+        try:
+            page=ctx.new_page();page.goto(self.url)
+            seed=page.evaluate("""async()=>{
+              const {openIncrementalLabStore}=await import('./sync-incremental-local.mjs');
+              const {prepareIncremental}=await import('./sync-incremental.mjs');
+              const {makeIncrementalWire}=await import('./sync-incremental-wire.mjs');
+              const {generateRecoveryCode,unlockRecoveryCode}=await import('./shared-crypto.mjs');
+              const key=await unlockRecoveryCode(await generateRecoveryCode()),m=crypto.randomUUID(),scope={userId:crypto.randomUUID(),archiveId:crypto.randomUUID(),keyId:key.keyId};
+              const record={id:m,schemaVersion:3,kind:'letter',title:'Fixture',date:'',from:'',to:'',note:'',tags:[],favorite:false,createdAt:'2026-11-25',updatedAt:'2026-11-25',pages:[{id:'p',caption:'',front:new Blob([new Uint8Array(100)],{type:'image/png'}),back:null,frontDerived:null,backDerived:null,frontCrop:null,backCrop:null}]};
+              const d=await prepareIncremental(key,{archiveId:scope.archiveId,memoryId:m,operationId:crypto.randomUUID(),revision:1},record),w=await makeIncrementalWire(d);
+              const s=await openIncrementalLabStore(scope);await s.prepare(m,w.wire,w.chunk);const j=await s.claim(m);
+              return {scope,m,token:j.token,until:j.until,ref:d.header.refs[0],bytes:Array.from(d.newAssets[0].ciphertext)};
+            }""")
+            page.close()
+            page=ctx.new_page();page.goto(self.url)
+            result=page.evaluate("""async seed=>{
+              const {openIncrementalLabStore,drainIncrementalLab}=await import('./sync-incremental-local.mjs');
+              const {scope,m,token,until,ref}=seed,bytes=new Uint8Array(seed.bytes),s=await openIncrementalLabStore(scope);
+              const before=await s.status(m),busy=await s.claim(m);
+              const originalNow=Date.now;Date.now=()=>until+1;
+              let recovered,oldRenew,oldFinish;
+              try{recovered=await s.claim(m);oldRenew=await s.renew(m,token);oldFinish=await s.finish(m,token,{state:'error'});await s.finish(m,recovered.token,{state:'error'});}
+              finally{Date.now=originalNow;}
+              const db=await new Promise((ok,no)=>{const r=indexedDB.open('archivito-incremental-cert-v1');r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error);});
+              const mutate=(name,fn)=>new Promise((ok,no)=>{const t=db.transaction(name,'readwrite'),r=t.objectStore(name).openCursor();r.onsuccess=()=>{const c=r.result;if(c){const v=c.value;fn(v);c.update(v);}};t.oncomplete=ok;t.onabort=()=>no(t.error);});
+              await mutate('jobs',v=>{v.chunks[0].bytes[0]^=1;});
+              let calls=0;const remote={publish:async()=>{calls++;throw Error('must not call');}};
+              const corrupt=await drainIncrementalLab({store:s,memoryId:m,remote,authorize:async()=>scope});
+              const retained=await s.status(m);
+              let reads=0;const good=async()=>{reads++;return bytes;};
+              await s.cached(m,ref,good);await mutate('cache',v=>{v.bytes[0]^=1;});
+              let rejected=false;try{await s.cached(m,ref,async()=>{const b=bytes.slice();b[0]^=1;return b;});}catch{rejected=true;}
+              const repaired=await s.cached(m,ref,good),warm=await s.cached(m,ref,good);
+              db.close();s.close();
+              return {before,busy,newToken:recovered.token!==token,oldRenew,oldFinish,corrupt,retained,calls,rejected,repaired:repaired.hit,warm:warm.hit,reads};
+            }""",seed)
+            self.assertEqual(result["before"]["pending"]["state"],"uploading")
+            self.assertIsNone(result["busy"])
+            self.assertTrue(result["newToken"])
+            self.assertFalse(result["oldRenew"])
+            self.assertFalse(result["oldFinish"])
+            self.assertEqual(result["corrupt"]["state"],"error")
+            self.assertEqual(result["retained"]["pending"]["state"],"error")
+            self.assertEqual(result["calls"],0)
+            self.assertTrue(result["rejected"])
+            self.assertFalse(result["repaired"])
+            self.assertTrue(result["warm"])
+            self.assertEqual(result["reads"],2)
+        finally:
+            ctx.close()
