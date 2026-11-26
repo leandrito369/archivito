@@ -41,3 +41,4 @@ jobs:
           npm run test:sync-incremental
           npm run test:incremental-transport
           npm run test:incremental-retention
+          npm run test:retention-approval

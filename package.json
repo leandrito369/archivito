@@ -21,7 +21,8 @@
     "test:sync-v3-remote": "node --test tests/test_sync_v3_remote.mjs",
     "test:sync-incremental": "node --test tests/test_sync_incremental.mjs",
     "test:incremental-transport": "node --test tests/test_sync_incremental_transport.mjs",
-    "test:incremental-retention": "node --test tests/test_sync_incremental_retention.mjs"
+    "test:incremental-retention": "node --test tests/test_sync_incremental_retention.mjs",
+    "test:retention-approval": "node --test tests/test_sync_retention_approval.mjs"
   },
   "dependencies": {
     "three": "0.187.0",
