@@ -19,9 +19,12 @@ begin
       and conname='inc_gate_hard_closed' and convalidated and pg_get_constraintdef(oid)='CHECK ((NOT enabled))')
       or exists(select 1 from archivito_inc.gates where enabled)
   then raise exception 'STOP: hard-closed gate not confirmed';end if;
-  select id into a from auth.users where lower(email)='archivito-cert-a@example.com' and email_confirmed_at is not null and deleted_at is null;
-  select id into b from auth.users where lower(email)='archivito-cert-b@example.com' and email_confirmed_at is not null and deleted_at is null;
-  select id into c from auth.users where lower(email)='archivito-cert-c@example.com' and email_confirmed_at is not null and deleted_at is null;
+  if (select count(*) from auth.users where lower(email) in
+      ('archivito-cert-a@example.com','archivito-cert-b@example.com','archivito-cert-c@example.com'))<>3
+  then raise exception 'STOP: three confirmed fixture accounts required';end if;
+  select id into a from auth.users where lower(email)='archivito-cert-a@example.com' and email_confirmed_at is not null and deleted_at is null for share;
+  select id into b from auth.users where lower(email)='archivito-cert-b@example.com' and email_confirmed_at is not null and deleted_at is null for share;
+  select id into c from auth.users where lower(email)='archivito-cert-c@example.com' and email_confirmed_at is not null and deleted_at is null for share;
   if a is null or b is null or c is null or a=b or a=c or b=c then raise exception 'STOP: three confirmed fixture accounts required';end if;
   if exists(select 1 from public.archive_members where user_id in(a,b,c) and
        (archive_id<>ar or user_id=c))
