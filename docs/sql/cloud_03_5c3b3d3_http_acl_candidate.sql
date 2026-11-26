@@ -53,22 +53,54 @@ create policy inc_cert_exec_read on archivito_inc_cert_candidate.fences for sele
 create policy inc_cert_exec_insert on archivito_inc_cert_candidate.fences for insert to archivito_cert_executor with check(true);
 create policy inc_cert_exec_update on archivito_inc_cert_candidate.fences for update to archivito_cert_executor using(true) with check(true);
 
+-- Restrictive policies prevent an existing/future permissive UPDATE policy
+-- from turning lock-only privileges into permission to change authz rows.
+create policy inc_cert_exec_no_mutation on public.archives as restrictive for update to archivito_cert_executor using(true) with check(false);
+create policy inc_cert_exec_no_mutation on public.archive_members as restrictive for update to archivito_cert_executor using(true) with check(false);
+create policy inc_cert_exec_no_mutation on auth.sessions as restrictive for update to archivito_cert_executor using(true) with check(false);
+create policy inc_cert_exec_no_mutation on archivito_inc.gates as restrictive for update to archivito_cert_executor using(true) with check(false);
+create policy inc_cert_exec_no_mutation on archivito_inc_cert_candidate.windows as restrictive for update to archivito_cert_executor using(true) with check(false);
+
+-- Private helper; no service/client grant. It locks in the order shared with
+-- the legacy core and checks fresh authz. It grants no operation by itself.
+-- The caller MUST already hold the certification window row FOR UPDATE.
+-- Administrative transactions touching both window and gate must use window
+-- -> gate -> session -> membership -> archive, never acquire window later.
+create function archivito_inc_cert_candidate.lock_actor_context(
+ p_actor uuid,p_session uuid,p_archive uuid,p_role text,p_key text
+) returns void language plpgsql security invoker set search_path='' as $$
+declare r text; k text;
+begin
+ if p_actor is null or p_session is null or p_archive is null
+    or p_role is null or p_role not in('owner','editor') or p_key is null
+ then raise exception using errcode='42501',message='certification denied';end if;
+ -- Exclusive gate lock upfront: no SHARE -> UPDATE upgrade during core step.
+ -- Closed gate still rejects in the actual core RPC; this helper cannot open it.
+ perform 1 from archivito_inc.gates where archive_id=p_archive for update;
+ if not found then raise exception using errcode='42501',message='certification denied';end if;
+ perform 1 from auth.sessions where id=p_session and user_id=p_actor and (not_after is null or not_after>clock_timestamp()) for share;
+ if not found then raise exception using errcode='42501',message='certification session denied';end if;
+ select role into r from public.archive_members where archive_id=p_archive and user_id=p_actor for share;
+ select key_fingerprint into k from public.archives where id=p_archive for share;
+ if k is distinct from p_key or r is distinct from p_role
+ then raise exception using errcode='42501',message='certification membership denied';end if;
+end $$;
+revoke all on function archivito_inc_cert_candidate.lock_actor_context(uuid,uuid,uuid,text,text) from public,anon,authenticated,service_role;
+grant execute on function archivito_inc_cert_candidate.lock_actor_context(uuid,uuid,uuid,text,text) to archivito_cert_executor;
+
 -- Trusted Edge must call getUser on the JWT before forwarding actor/session.
--- Session lookup is an additional revocation check, not JWT verification.
+-- Window serializes all wrapper calls; gate precedes authz locks, then fence.
+-- A final guard after core work revalidates expiry and session not_after.
 create function archivito_inc_cert_candidate.actor_guard(p_actor uuid,p_session uuid,p_archive uuid)
 returns archivito_inc_cert_candidate.windows language plpgsql security invoker set search_path='' as $$
-declare w archivito_inc_cert_candidate.windows%rowtype; r text; k text;
+declare w archivito_inc_cert_candidate.windows%rowtype;
 begin
  select * into w from archivito_inc_cert_candidate.windows where archive_id=p_archive for update;
  if not found or w.enabled is distinct from true or clock_timestamp()<w.opened_at or clock_timestamp()>=w.expires_at
  then raise exception using errcode='42501',message='certification denied';end if;
  if p_actor is null or p_session is null or p_actor not in(w.owner_id,w.editor_id) then raise exception using errcode='42501',message='certification denied';end if;
- perform 1 from auth.sessions where id=p_session and user_id=p_actor and (not_after is null or not_after>clock_timestamp()) for share;
- if not found then raise exception using errcode='42501',message='certification session denied';end if;
- select role into r from public.archive_members where archive_id=p_archive and user_id=p_actor for share;
- select key_fingerprint into k from public.archives where id=p_archive for share;
- if k is distinct from w.key_id or r is distinct from (case when p_actor=w.owner_id then 'owner' else 'editor' end)
- then raise exception using errcode='42501',message='certification membership denied';end if;
+ perform archivito_inc_cert_candidate.lock_actor_context(p_actor,p_session,p_archive,case when p_actor=w.owner_id then 'owner' else 'editor' end,w.key_id);
+ if clock_timestamp()>=w.expires_at then raise exception using errcode='42501',message='certification denied';end if;
  return w;
 end $$;
 
@@ -78,7 +110,7 @@ create function archivito_inc_cert_candidate.dispatch(
  p_actor uuid,p_session uuid,p_action text,p_archive uuid,p_wire jsonb default null,
  p_memory uuid default null,p_operation uuid default null,p_asset uuid default null,
  p_hash text default null,p_generation bigint default null,p_token uuid default null
-) returns jsonb language plpgsql security definer set search_path='' as $$
+) returns jsonb language plpgsql security definer set search_path='' set lock_timeout='5s' as $
 declare win archivito_inc_cert_candidate.windows%rowtype; i record; f archivito_inc_cert_candidate.fences%rowtype;
  result jsonb; mem uuid;
 begin
