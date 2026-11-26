@@ -6,17 +6,17 @@ const uuid=x=>typeof x==="string"&&UUID.test(x);
 const local=x=>typeof x==="string"&&x.length>0&&x.length<=200;
 const fail=()=>{throw Error("Vinculación de identidad inválida o en conflicto.");};
 const request=r=>new Promise((resolve,reject)=>{r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
-async function openDB(){
+async function openDB(laboratory){
  return new Promise((resolve,reject)=>{
-  const r=indexedDB.open(DB,1);
+  const r=indexedDB.open(laboratory===true?DB+'-lab':DB,1);
   r.onupgradeneeded=()=>{const s=r.result.createObjectStore(STORE,{keyPath:["scope","localId"]});s.createIndex("remote",["scope","remoteId"],{unique:true});};
   r.onsuccess=()=>{const db=r.result;db.onversionchange=()=>db.close();resolve(db);};
   r.onerror=()=>reject(r.error);r.onblocked=()=>reject(Error("Base de identidad bloqueada."));
  });
 }
-export async function openV3IdentityMap({userId,archiveId}={}){
+export async function openV3IdentityMap({userId,archiveId}={},{laboratory=false}={}){
  if(!uuid(userId)||!uuid(archiveId))fail();
- const scope=userId+"/"+archiveId,db=await openDB();
+ const scope=userId+"/"+archiveId,db=await openDB(laboratory);
  let closed=false;
  async function run(mode,work){
   if(closed)fail();

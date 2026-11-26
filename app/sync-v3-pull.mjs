@@ -9,10 +9,10 @@ const UUID=/^[a-f0-9]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const uuid=x=>typeof x==="string"&&UUID.test(x);
 const fail=()=>{throw Error("Revisión entrante bloqueada; no se sobrescribió el recuerdo local.");};
 const req=r=>new Promise((resolve,reject)=>{r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
-async function library(){
+async function library(laboratory){
  return new Promise((resolve,reject)=>{
-  const r=indexedDB.open("nuestro-archivo-cartas-v1",1);
-  r.onupgradeneeded=()=>r.transaction.abort();
+  const r=indexedDB.open(laboratory===true?"archivito-v3-lab-library-v1":"nuestro-archivo-cartas-v1",1);
+  r.onupgradeneeded=()=>{if(laboratory===true)r.result.createObjectStore("letters",{keyPath:"id"});else r.transaction.abort();};
   r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);
   r.onblocked=()=>reject(Error("Biblioteca bloqueada."));
  });
@@ -30,17 +30,17 @@ async function digest(p){
 }
 // The import path uses an explicit fresh local UUID, never the remote manifest's
 // local ID. Existing bindings always retain their local ID.
-export async function applyV3Pull({scope,key,expected,packet,localId,validateImage,makeThumb}){
+export async function applyV3Pull({scope,key,expected,packet,localId,validateImage,makeThumb,laboratory=false}){
  const p=structuredClone(packet);validateV3Package(p);
  if(!scope||key?.keyId!==scope.keyId||p.archiveId!==scope.archiveId||p.keyId!==scope.keyId||
  !expected||p.archiveId!==expected.archiveId||p.memoryId!==expected.memoryId||p.operationId!==expected.operationId||p.revision!==expected.revision)fail();
  const target={revision:p.revision,operationId:p.operationId},hash=await digest(p);
  // Validate all content before reserving or writing anything.
  const decoded=await decodeV3Record(key,expected,p,{validateImage,makeThumb});
- const identity=await openV3IdentityMap(scope);
+ const identity=await openV3IdentityMap(scope,{laboratory});
  let outbox,db;
  try{
-  outbox=await openV3Outbox(scope);db=await library();
+  outbox=await openV3Outbox(scope,{laboratory});db=await library(laboratory);
   let binding=await identity.byRemote(p.memoryId);
   if(binding&&localId!==undefined&&binding.localId!==localId)fail();
   if(!binding){

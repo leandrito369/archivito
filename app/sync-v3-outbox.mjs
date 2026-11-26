@@ -9,9 +9,9 @@ const uuid=x=>typeof x==="string"&&UUID.test(x);
 const local=x=>typeof x==="string"&&x.length>0&&x.length<=200;
 const fail=()=>{throw Error("Operación de sincronización local inválida o en conflicto.");};
 const req=r=>new Promise((resolve,reject)=>{r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
-function openDB(){
+function openDB(laboratory){
  return new Promise((resolve,reject)=>{
-  const r=indexedDB.open(DB,1);
+  const r=indexedDB.open(laboratory===true?DB+'-lab':DB,1);
   r.onupgradeneeded=()=>{
    r.result.createObjectStore("heads",{keyPath:["scope","remoteId"]});
    r.result.createObjectStore("jobs",{keyPath:["scope","remoteId"]});
@@ -31,10 +31,10 @@ async function transact(db,mode,work){
 const size=p=>[p.metadata,...p.assets].reduce((n,e)=>n+e.nonce.byteLength+e.ciphertext.byteLength,0);
 function sameBase(a,b){return (a?.revision??0)===(b?.revision??0)&&(a?.operationId??null)===(b?.operationId??null);}
 const summary=j=>j?{remoteId:j.remoteId,localId:j.localId,operationId:j.operationId,revision:j.revision,encodedGeneration:j.encodedGeneration,state:j.state,attempts:j.attempts,actualRevision:j.actualRevision??null}:null;
-export async function openV3Outbox({userId,archiveId,keyId}={}){
+export async function openV3Outbox({userId,archiveId,keyId}={},{laboratory=false}={}){
  if(!uuid(userId)||!uuid(archiveId)||typeof keyId!=="string"||!HEX.test(keyId))fail();
  // Key changes must never create a fresh baseline for the same identity.
- const scope=userId+"/"+archiveId,db=await openDB();let closed=false;
+ const scope=userId+"/"+archiveId,db=await openDB(laboratory);let closed=false;
  const run=(mode,work)=>{if(closed)fail();return transact(db,mode,work);};
  const pk=remoteId=>{if(!uuid(remoteId))fail();return [scope,remoteId];};
  function check(row,localId){if(row&&(row.keyId!==keyId||localId!==undefined&&row.localId!==localId))fail();}
