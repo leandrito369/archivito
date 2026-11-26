@@ -14,6 +14,7 @@ const canonical=x=>Array.isArray(x)?x.map(canonical):x&&typeof x==='object'?Obje
 const baseOf=w=>w?{revision:w.header.revision,operationId:w.header.operationId}:null;
 export async function openIncrementalLabStore(scope){
  if(!uuid(scope?.userId)||!uuid(scope?.archiveId)||!hex(scope?.keyId))fail();
+ scope={userId:scope.userId,archiveId:scope.archiveId,keyId:scope.keyId};
  const db=await open(),prefix=[scope.userId,scope.archiveId,scope.keyId].join("/")+"/";
  function id(m){if(!uuid(m))fail();return prefix+m;}
  function scoped(w,m){const h=validateIncrementalWire(w);if(h.archiveId!==scope.archiveId||h.keyId!==scope.keyId||h.memoryId!==m)fail();return h;}
@@ -39,6 +40,7 @@ export async function openIncrementalLabStore(scope){
    return tx(["jobs"],"readwrite",async j=>{const row=await req(j.get(id(m))),now=Date.now();
     if(!row||row.state==="conflict"||row.state==="uploading"&&row.until>now)return null;
     if(!["pending","error","uploading"].includes(row.state))fail();
+    scoped(row.wire,m);
     row.state="uploading";row.token=crypto.randomUUID();row.until=now+LEASE;await req(j.put(row));return row;
    });
   },
@@ -51,7 +53,9 @@ export async function openIncrementalLabStore(scope){
      const old=await req(h.get(id(m)));if(!same(baseOf(old?.wire??null),r.wire.base))fail();
      await req(h.put({id:id(m),wire:r.wire}));await req(j.delete(id(m)));
     }else{
-     if(!["error","conflict"].includes(result?.state))fail();r.state=result.state;r.token=null;r.until=0;await req(j.put(r));
+     if(!["error","conflict"].includes(result?.state))fail();
+     if(result.state==="conflict"&&(result.operationId!==r.wire.header.operationId||!Number.isSafeInteger(result.actualRevision)||result.actualRevision<0||(result.actualRevision===0?result.actualOperationId!==null:!uuid(result.actualOperationId))))fail();
+     r.state=result.state;r.token=null;r.until=0;await req(j.put(r));
     }
     return true;
    });
@@ -80,17 +84,58 @@ export async function openIncrementalLabStore(scope){
   }
  };
 }
-// Renewal is serialized; wait for it before finishing. If ownership is lost,
-// abort request and leave job for its next valid lease holder.
+// Validate the durable snapshot before ANY remote request, including begin/replay.
+async function verifiedChunks(job,assertLease){
+ const h=validateIncrementalWire(job.wire),expected=job.wire.uploads.flatMap(u=>u.chunks);
+ if(!Array.isArray(job.chunks)||job.chunks.length!==expected.length)fail();
+ const chunks=new Map();
+ for(const c of job.chunks){
+  if(!c||typeof c.path!=="string"||chunks.has(c.path)||!(c.bytes instanceof Uint8Array))fail();
+  chunks.set(c.path,c.bytes.slice());
+ }
+ for(const b of expected){
+  await assertLease();
+  const bytes=chunks.get(b.path);
+  if(!bytes||bytes.length!==b.size||await sha256Hex(bytes)!==b.sha256)fail();
+ }
+ return {chunks,h};
+}
+// Renewal is serialized. A local token is NOT a distributed server fence.
+// Never send a new request knowingly under an expired/replaced lease.
 export async function drainIncrementalLab({store,memoryId,remote,authorize,signal}){
- await authorize();const job=await store.claim(memoryId);if(!job)return {state:"idle"};
+ if(signal?.aborted)return {state:"idle"};
+ await authorize();if(signal?.aborted)return {state:"idle"};
+ const job=await store.claim(memoryId);if(!job)return {state:"idle"};
  const ctl=new AbortController(),cancel=()=>ctl.abort();
- if(signal?.aborted)cancel();signal?.addEventListener("abort",cancel,{once:true});
+ signal?.addEventListener("abort",cancel,{once:true});if(signal?.aborted)cancel();
  let renewal=Promise.resolve(),lost=false;
- const timer=setInterval(()=>{renewal=renewal.then(async()=>{if(!await store.renew(memoryId,job.token)){lost=true;cancel();}}).catch(()=>{lost=true;cancel();});},LEASE/3);
+ function renew(){
+  renewal=renewal.then(async()=>{
+   if(lost)return;
+   try{if(!await store.renew(memoryId,job.token)){lost=true;cancel();}}
+   catch{lost=true;cancel();}
+  });
+  return renewal;
+ }
+ async function assertLease(){
+  if(ctl.signal.aborted)fail();
+  await renew();
+  if(lost||ctl.signal.aborted)fail();
+ }
+ const timer=setInterval(()=>{void renew();},LEASE/3);
  let result;
- try{const chunks=new Map(job.chunks.map(x=>[x.path,x.bytes]));result=await remote.publish(job.wire,p=>chunks.get(p)?.slice(),{signal:ctl.signal});await authorize();}
- catch{result={state:"error"};}
+ try{
+  await assertLease();
+  const {chunks,h}=await verifiedChunks(job,assertLease);
+  await authorize();await assertLease();
+  result=await remote.publish(job.wire,async p=>{await assertLease();return chunks.get(p)?.slice();},{signal:ctl.signal,assertLease});
+  await authorize();await assertLease();
+  if(result?.state==="synced"){
+   if(result.operationId!==h.operationId||result.revision!==h.revision||typeof result.replayed!=="boolean")fail();
+  }else if(result?.state==="conflict"){
+   if(result.operationId!==h.operationId||!Number.isSafeInteger(result.actualRevision)||result.actualRevision<0||(result.actualRevision===0?result.actualOperationId!==null:!uuid(result.actualOperationId)))fail();
+  }else if(result?.state!=="error")fail();
+ }catch{result={state:"error"};}
  finally{clearInterval(timer);signal?.removeEventListener("abort",cancel);await renewal;}
  if(lost)return {state:"stale"};
  return await store.finish(memoryId,job.token,result)?result:{state:"stale"};
