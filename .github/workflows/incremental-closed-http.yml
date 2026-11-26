@@ -1,0 +1,21 @@
+name: Incremental HTTP — negative probes closed gate
+on:
+  pull_request:
+    paths:
+      - 'tests/remote/probe_incremental_closed_http.py'
+      - '.github/workflows/incremental-closed-http.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  negative-probes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Probe deployed v1 without valid credentials
+        env:
+          ARCHIVITO_CERT_URL: https://pjzathwsanxenmjmeizg.supabase.co/functions/v1/archivito-sync-incremental
+        run: python3 tests/remote/probe_incremental_closed_http.py
