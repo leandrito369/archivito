@@ -38,3 +38,4 @@ jobs:
           npm run test:sync-wire
           npm run test:sync-v3-service
           npm run test:sync-v3-remote
+          npm run test:sync-incremental

@@ -19,7 +19,7 @@ function context(c){
  if(!c||!uuid(c.archiveId)||!uuid(c.memoryId)||!uuid(c.operationId)||!Number.isSafeInteger(c.revision)||c.revision<1)fail();
  return {archiveId:c.archiveId,memoryId:c.memoryId,operationId:c.operationId,revision:c.revision};
 }
-function meta(m){
+export function validateRecordMetadata(m){
  if(!exact(m,fields)||!str(m.id,200)||!m.id||!kinds.has(m.kind)||!str(m.title,120)||!m.title||
  !str(m.date,10)||!str(m.from,100)||!str(m.to,100)||!str(m.note,4000)||
  !Array.isArray(m.tags)||m.tags.length>15||!m.tags.every(x=>str(x,60))||
@@ -28,12 +28,12 @@ function meta(m){
 }
 // Crop is a bounded JSON value; preserve geometry and algorithm metadata without coercion.
 // Reject non-JSON data, dangerous keys, excessive depth and non-finite numbers.
-function crop(value,depth=0){
+export function validateRecordCrop(value,depth=0){
  if(depth>8)fail();
  if(value===null||typeof value==="boolean"||str(value,2048)||typeof value==="number"&&Number.isFinite(value))return value;
- if(Array.isArray(value)&&value.length<=64)return value.map(x=>crop(x,depth+1));
+ if(Array.isArray(value)&&value.length<=64)return value.map(x=>validateRecordCrop(x,depth+1));
  if(value&&Object.getPrototypeOf(value)===Object.prototype&&Object.keys(value).length<=64){
-  const entries=Object.entries(value).map(([k,v])=>{if(!str(k,80)||["__proto__","constructor","prototype"].includes(k))fail();return [k,crop(v,depth+1)];});
+  const entries=Object.entries(value).map(([k,v])=>{if(!str(k,80)||["__proto__","constructor","prototype"].includes(k))fail();return [k,validateRecordCrop(v,depth+1)];});
   return Object.fromEntries(entries);
  }
  fail();
@@ -61,7 +61,7 @@ export async function encodeV3Record(key,c,record){
  // Snapshot before awaits; Blobs are immutable and structuredClone preserves their bytes.
  const r=structuredClone(record);
  if(!r||r.schemaVersion!==3||!Array.isArray(r.pages)||r.pages.length<1||r.pages.length>25)fail();
- const m=meta(Object.fromEntries(fields.map(k=>[k,r[k]])));
+ const m=validateRecordMetadata(Object.fromEntries(fields.map(k=>[k,r[k]])));
  const ids=new Set([c.memoryId]),pageIds=new Set(),pages=[],assets=[];
  let total=0;
  // Preflight every page and all byte limits before encryption.
@@ -70,7 +70,7 @@ export async function encodeV3Record(key,c,record){
   if(!p||!str(p.id,120)||!p.id||pageIds.has(p.id)||!str(p.caption??"",200)||!p.front)fail();
   pageIds.add(p.id);
   if(p.frontCrop!=null&&!p.frontDerived||p.backCrop!=null&&!p.backDerived||p.backDerived&&!p.back)fail();
-  const page={id:p.id,caption:p.caption??"",frontCrop:crop(p.frontCrop??null),backCrop:crop(p.backCrop??null),front:null,back:null,frontDerived:null,backDerived:null};
+  const page={id:p.id,caption:p.caption??"",frontCrop:validateRecordCrop(p.frontCrop??null),backCrop:validateRecordCrop(p.backCrop??null),front:null,back:null,frontDerived:null,backDerived:null};
   for(const side of sides){
    const b=p[side];if(b==null)continue;
    if(!(b instanceof Blob)||!types.has(b.type)||b.size<1||b.size>MAX_ASSET)fail();
@@ -97,12 +97,12 @@ export async function decodeV3Record(key,expected,p,{makeThumb,validateImage}={}
  if(Object.keys(c).some(k=>c[k]!==p[k])||p.keyId!==key.keyId||typeof makeThumb!=="function"||typeof validateImage!=="function")fail();
  const m=await openMetadata(key,ctx(c,c.memoryId,"metadata"),p.metadata);
  if(!exact(m,["format","operationId","record","pages"])||m.format!==MANIFEST||m.operationId!==c.operationId||!Array.isArray(m.pages)||m.pages.length<1||m.pages.length>25)fail();
- const record=meta(m.record),byId=new Map(p.assets.map(e=>[e.objectId,e])),used=new Set(),pageIds=new Set(),pages=[];
+ const record=validateRecordMetadata(m.record),byId=new Map(p.assets.map(e=>[e.objectId,e])),used=new Set(),pageIds=new Set(),pages=[];
  for(const page of m.pages){
   if(!exact(page,["id","caption","frontCrop","backCrop",...sides])||!str(page.id,120)||!page.id||pageIds.has(page.id)||!str(page.caption,200)||!page.front||
   page.frontCrop!==null&&!page.frontDerived||page.backCrop!==null&&!page.backDerived||page.backDerived&&!page.back)fail();
   pageIds.add(page.id);
-  const decoded={id:page.id,caption:page.caption,frontCrop:crop(page.frontCrop),backCrop:crop(page.backCrop)};
+  const decoded={id:page.id,caption:page.caption,frontCrop:validateRecordCrop(page.frontCrop),backCrop:validateRecordCrop(page.backCrop)};
   for(const side of sides){
    const d=page[side];if(d===null){decoded[side]=null;continue;}
    if(!exact(d,["id","mime","size","sha256"])||!uuid(d.id)||used.has(d.id)||!types.has(d.mime)||!Number.isSafeInteger(d.size)||d.size<1||d.size>MAX_ASSET||typeof d.sha256!=="string"||!HEX.test(d.sha256)||!byId.has(d.id))fail();
