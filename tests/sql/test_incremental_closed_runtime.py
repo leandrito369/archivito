@@ -135,7 +135,7 @@ def main():
     # Pass no inherited tokens, no project URLs or credentials.
     env={k:os.environ[k] for k in ("PATH","HOME","DENO_DIR") if k in os.environ}
     env.update(SUPABASE_URL=f"http://127.0.0.1:{gateway.server_port}",SUPABASE_SERVICE_ROLE_KEY="synthetic-local-only")
-    proc=subprocess.Popen(["deno","run","--cached-only","--allow-env","--allow-net=0.0.0.0:8000,127.0.0.1:"+str(gateway.server_port),str(ENTRY)],cwd=ROOT,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+    proc=subprocess.Popen(["deno","run","--node-modules-dir=none","--cached-only","--allow-env","--allow-net=0.0.0.0:8000,127.0.0.1:"+str(gateway.server_port),str(ENTRY)],cwd=ROOT,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
     try:
         for _ in range(80):
             if proc.poll() is not None: raise AssertionError(proc.stdout.read())
