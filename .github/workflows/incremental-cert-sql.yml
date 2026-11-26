@@ -1,0 +1,36 @@
+name: PostgreSQL — candidato de certificación incremental (aislado)
+on:
+  pull_request:
+    paths:
+      - 'docs/sql/cloud_03_5c3b3d_cert_fence_candidate.sql'
+      - 'tests/sql/cloud_03_5c3b3d_cert_fence_lab.sql'
+      - '.github/workflows/incremental-cert-sql.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sql-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: synthetic-lab-only
+          POSTGRES_DB: archivito_cert_lab
+        options: >-
+          --health-cmd "pg_isready -U postgres -d archivito_cert_lab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ejecutar SQL en contenedor desechable
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$PG_CONTAINER" mkdir -p /lab/docs/sql /lab/tests/sql
+          docker cp docs/sql/cloud_03_5c3b3d_cert_fence_candidate.sql "$PG_CONTAINER:/lab/docs/sql/"
+          docker cp tests/sql/cloud_03_5c3b3d_cert_fence_lab.sql "$PG_CONTAINER:/lab/tests/sql/"
+          docker exec "$PG_CONTAINER" psql -X -U postgres -d archivito_cert_lab -v ON_ERROR_STOP=1 -f /lab/tests/sql/cloud_03_5c3b3d_cert_fence_lab.sql
+          docker exec "$PG_CONTAINER" psql -X -U postgres -d archivito_cert_lab -v ON_ERROR_STOP=1 -c "DO \$\$ BEGIN IF to_regnamespace('archivito_inc_cert_candidate') IS NOT NULL THEN RAISE EXCEPTION 'rollback failed'; END IF; END \$\$;"
