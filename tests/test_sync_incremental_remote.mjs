@@ -65,3 +65,54 @@ test("lease loss prevents the next HTTP request and rejects stale response",asyn
  assert.equal(result.state,"synced");
  assert.equal(l.objects.size,2);
 });
+
+import {handleFencedIncremental,parseFence,verifiedSession} from "../server/sync-incremental-fenced-service.mjs";
+test("fenced client and service: exact acquisition recovery, no legacy and guarded Storage",async()=>{
+ const l=await lab(),sessionId=randomUUID(),jwt="e30."+Buffer.from(JSON.stringify({sub:l.scope.userId,role:"authenticated",session_id:sessionId})).toString("base64url")+".synthetic";
+ const objects=new Map(),calls=[],actions=[];let gen=0,fenceToken=null,committed=false,verified=false,lost=true,allow=true,revokeOnDownload=false;
+ const rpc=async p=>{
+  assert.equal(p.p_actor,l.scope.userId);assert.equal(p.p_session,sessionId);
+  calls.push(p.p_action);if(!allow)throw Error("revoked");
+  if(p.p_action==="claim"){
+   assert.deepEqual(p.p_wire,l.w.wire);
+   gen++;fenceToken=randomUUID();
+   return {generation:gen,token:fenceToken,result:committed?{state:"synced",operationId:l.c.operationId,revision:1,replayed:true}:{state:"staging",operationId:l.c.operationId,verifiedAssets:verified?[l.d.header.refs[0].id]:[]}};
+  }
+  if(["lookup","intent","attest","commit"].includes(p.p_action)){
+   assert.equal(p.p_generation,gen);assert.equal(p.p_token,fenceToken);
+   if(p.p_action==="intent")return l.w.wire;
+   if(p.p_action==="lookup")return {state:"staging",operationId:l.c.operationId,verifiedAssets:[]};
+   if(p.p_action==="attest"){verified=true;return {state:"verified",operationId:l.c.operationId,assetId:p.p_asset};}
+   committed=true;return {state:"synced",operationId:l.c.operationId,revision:1,replayed:false};
+  }
+  assert.equal(p.p_generation,undefined);assert.equal(p.p_token,undefined);
+  if(p.p_action==="head"||p.p_action==="revision")return l.w.wire;
+  if(p.p_action==="catalog")return {archiveId:l.c.archiveId,memoryId:l.c.memoryId,operationId:l.c.operationId,keyId:l.key.keyId,ref:l.d.header.refs[0],chunks:l.w.wire.uploads[0].chunks};
+  throw Error("unexpected action");
+ };
+ const common={token:jwt,verifyUser:async t=>t===jwt?{id:l.scope.userId}:null,rpc,
+  upload:async(path,b)=>{assert(!objects.has(path));objects.set(path,b.slice());},
+  download:async(path)=>{const result=objects.get(path)?.slice()??null;if(revokeOnDownload)allow=false;return result;}};
+ const remote=createIncrementalRemote({client:{auth:{getSession:async()=>({data:{session:{user:{id:l.scope.userId},access_token:jwt}}})}},url:"https://test.supabase.co",publishableKey:"sb_publishable_test",scope:l.scope,enabled:true,fenced:true,authorize:async()=>l.scope,localGuard:()=>l.scope,
+  fetcher:async(url,o)=>{
+   const p=new URL(url).searchParams,action=p.get("action");actions.push(action);
+   const fence=parseFence(o.headers["x-archivito-generation"]??null,o.headers["x-archivito-fence"]??null);
+   const result=await handleFencedIncremental({...common,action,fence,body:action==="block"?null:JSON.parse(o.body),block:action==="block"?{archiveId:p.get("archiveId"),operationId:p.get("operationId"),path:p.get("path"),bytes:o.body}:undefined});
+   if(action==="claim"&&lost){lost=false;throw Error("lost acquisition response");}
+   return result instanceof Uint8Array?new Response(result,{headers:{"content-type":"application/octet-stream"}}):new Response(JSON.stringify(result),{headers:{"content-type":"application/json"}});
+  }});
+ assert.equal(verifiedSession(jwt,l.scope.userId),sessionId);
+ assert.throws(()=>parseFence("1",null));
+ assert.throws(()=>verifiedSession(jwt,randomUUID()));
+ await assert.rejects(handleFencedIncremental({...common,action:"begin",body:l.w.wire,fence:null}));
+ await assert.rejects(handleFencedIncremental({...common,action:"commit",body:l.w.wire,fence:null}));
+ await assert.rejects(remote.publish(l.w.wire,l.w.chunk));assert.deepEqual(actions,["claim"]);assert.equal(objects.size,0);
+ // Mock permits immediate second claim; real SQL waits for expiry (separate lab).
+ const result=await remote.publish(l.w.wire,l.w.chunk);
+ assert.equal(result.state,"synced");assert.equal(gen,2);assert.equal(objects.size,2);
+ assert(!actions.includes("begin"));assert(calls.filter(x=>x==="intent").length>=4);
+ const m=await remote.manifest(l.c.memoryId);
+ assert.deepEqual(await remote.readAsset(m.expected,m.header.refs[0]),l.d.newAssets[0].ciphertext);
+ revokeOnDownload=true;
+ await assert.rejects(remote.readAsset(m.expected,m.header.refs[0]));
+});
