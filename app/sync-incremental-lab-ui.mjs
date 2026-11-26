@@ -12,7 +12,7 @@ export function createIncrementalLabUI({getClient,getGate,url,publishableKey}){
   const metrics=createV3Metrics(rows=>{if(n===seq)$("inc-lab-metrics").textContent=rows.map(r=>r.phase+": "+r.count+" × · "+r.ms+" ms"+(r.bytes?" · "+r.bytes+" bytes":"")).join(" | ");});
   try{
    const result=await metrics.measure("total",()=>getGate().withUnlocked(async(key,scope,authorize,localGuard)=>{
-    const remote=createIncrementalRemote({client:getClient(),url,publishableKey,scope,authorize,localGuard,enabled:true,metrics,onProgress:({phase,done,total})=>{if(n===seq)$("inc-lab-status-output").textContent=phase+" · "+done+"/"+total;}});
+    const remote=createIncrementalRemote({client:getClient(),url,publishableKey,scope,authorize,localGuard,enabled:true,fenced:true,metrics,onProgress:({phase,done,total})=>{if(n===seq)$("inc-lab-status-output").textContent=phase+" · "+done+"/"+total;}});
     return runIncrementalLab({scope,key,authorize,remote,action,size:$("inc-lab-size").value,metrics,signal:ctl.signal});
    }));
    if(n===seq){$("inc-lab-status-output").textContent=({synced:"PUBLICADO",applied:"VERIFICADO",error:"Pendiente cifrado conservado; reintentá.",conflict:"CONFLICTO: pendiente conservado.",idle:"Sin trabajo disponible",stale:"Lease perdido; reintentá.",status:"Estado local","pending-exists":"Hay una operación pendiente.","read-first":"Recuperá primero la revisión.","already-remote":"Recuperá la muestra existente.",empty:"No hay muestra remota."})[result.state]||"Estado no confirmado";
