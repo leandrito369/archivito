@@ -1,5 +1,5 @@
 // Local-only instrumentation. Fixed phase labels, numbers only, no identifiers.
-const phases=new Set(["auth","snapshot","sample","prepare","wire","begin","block","commit","header","download","reconstruct","apply","queue","total"]);
+const phases=new Set(["auth","snapshot","sample","prepare","wire","begin","block","commit","header","download","reconstruct","apply","queue","total","attest","manifest","catalog","lookup"]);
 export function createV3Metrics(onUpdate=()=>{}){
  const rows=new Map();
  function record(phase,ms,bytes=0){
