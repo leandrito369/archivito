@@ -107,6 +107,8 @@ def probe(label, mode, key, password, wait=wait_expiry):
     require(label, "fixture_login", code, code == 200 and bool(access and refresh_token))
     del session
     active = access
+    p = None
+    refreshed = False
     try:
         p = claims(access)
         h = validated_user(label, key, access, p, "auth_user")
@@ -149,6 +151,7 @@ def probe(label, mode, key, password, wait=wait_expiry):
             manifest(label, key, access, "closed_manifest_after_expiry")
             # Refresh ONLY after the expiry observations, to distinguish expired JWT
             # from revoked session and obtain a valid access token for local cleanup.
+            refreshed = True
             code, _, body = refresh(key, refresh_token)
             new_access, new_refresh = session_tokens(body)
             if new_access:
@@ -162,8 +165,14 @@ def probe(label, mode, key, password, wait=wait_expiry):
             validated_user(label, key, active, np, "refreshed_identity")
     finally:
         if active:
-            # Do not claim cleanup on failure. If the original JWT expired and
-            # refresh failed, report the need for operator session review.
+            # If interrupted after natural expiry but before the planned refresh,
+            # make one cleanup-only refresh. Never retry a refresh already sent.
+            if mode == "EXPIRE" and active == access and not refreshed and p is not None and time.time() >= p["exp"]:
+                code, _, body = refresh(key, refresh_token)
+                candidate, _ = session_tokens(body)
+                if code != 200 or not candidate or claims(candidate)["sub"] != p["sub"]:
+                    raise SystemExit("STOP: cleanup refresh failed; operator session review required")
+                active = candidate
             logout(label, key, active, "cleanup_logout")
 
 def main():
