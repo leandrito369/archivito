@@ -22,3 +22,12 @@ Observado el 26/11/2026: una fila de gate, cero gates habilitados, restricción 
 5. Ejecutar matriz A/B/C/D en documentación C3B3C, cerrar gate y comprobar rechazo posterior. Sólo después iniciar C3B3E.
 
 Estado: C3B3D iniciado, certificación HTTP real pendiente. No cambio persistente en Supabase, no merge, no despliegue ni acceso a biblioteca personal.
+
+## Incremento de integración multisesión (PR #52)
+La primera revisión 9390070fd7c16b9c5c2bafab7f415373d4cb02b7 aprobó SQL #1 (45833118527): NOTICE PASS y rollback confirmado; Pages #44 (45833118659) success. La CI del nuevo SHA debe volver a aprobarse.
+
+- Candidato fenced_rpc: claim_begin y fenced_step llaman al sync_inc_step existente en la misma transacción; guardas antes y después de la mutación. El digest JSONB y la reserva se calculan del wire, no de números enviados por el cliente. La validación completa de wire y la identidad de sesión fresca siguen siendo obligación del futuro Edge. Una sola ventana por archivo en el candidato (sin renovación entre ventanas).
+- PostgreSQL multisesión desechable: carga el SQL original de la RPC y del catálogo, con relaciones mínimas de archives/members/Storage ficticias. Sólo dentro de ese contenedor se elimina la restricción hard-closed para ensayar la transacción; jamás contra Supabase. El rol de prueba es administrador del contenedor, no demuestra permisos de ejecución real del futuro wrapper. Sin grants nuevos a service_role.
+- Pruebas con conexiones independientes y barrera de espera comprobada en pg_stat_activity: cierre antes de commit, commit antes de cierre, expiración mientras RPC espera lock (rollback de mutación), takeover y token obsoleto, dos revisiones competidoras, replay, revocación de membresía y rollback de reserva ante fallo de begin.
+- La serialización se define por locks de ventana/fence/gate. Un commit que obtiene los locks y supera guardas antes de cierre puede terminar antes de que el cierre se linealice; no se promete que el cierre cancele una transacción ya autorizada ni que la hora física de COMMIT preceda exactamente el vencimiento. La expiración durante el trabajo del core se revalida antes de devolver el resultado. Storage externo no está transaccionado; se usan sólo metadatos ficticios.
+- Antes de un despliegue: cerrar bypass de RPC legacy (no basta wrapper), integrar inspect/lecturas y acciones Storage, sesión/revocación, entrega/recuperación del token, protocolo cliente, privilegios mínimos, autorización de apertura y E2E real. Este candidato no es una migración ni una versión desplegable.
