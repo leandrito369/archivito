@@ -19,7 +19,8 @@
     "test:sync-wire": "node --test tests/test_sync_v3_wire.mjs",
     "test:sync-v3-service": "node --test tests/test_sync_v3_service.mjs",
     "test:sync-v3-remote": "node --test tests/test_sync_v3_remote.mjs",
-    "test:sync-incremental": "node --test tests/test_sync_incremental.mjs"
+    "test:sync-incremental": "node --test tests/test_sync_incremental.mjs",
+    "test:incremental-transport": "node --test tests/test_sync_incremental_transport.mjs"
   },
   "dependencies": {
     "three": "0.187.0",
