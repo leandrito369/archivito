@@ -16,7 +16,8 @@
     "test:fixture-read": "node --test tests/test_sync_fixture_read.mjs",
     "test:sync-v3": "node --test tests/test_sync_v3_contract.mjs",
     "test:sync-revisions": "node --test tests/test_sync_v3_revisions.mjs",
-    "test:sync-wire": "node --test tests/test_sync_v3_wire.mjs"
+    "test:sync-wire": "node --test tests/test_sync_v3_wire.mjs",
+    "test:sync-v3-service": "node --test tests/test_sync_v3_service.mjs"
   },
   "dependencies": {
     "three": "0.187.0",

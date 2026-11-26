@@ -36,3 +36,4 @@ jobs:
           npm run test:sync-v3
           npm run test:sync-revisions
           npm run test:sync-wire
+          npm run test:sync-v3-service
