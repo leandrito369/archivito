@@ -1,0 +1,62 @@
+"""Real IndexedDB tests; no network, no personal library."""
+from functools import partial
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+from threading import Thread
+import unittest
+from playwright.sync_api import sync_playwright
+ROOT=Path(__file__).resolve().parents[1]
+class Quiet(SimpleHTTPRequestHandler):
+    def log_message(self,*_): pass
+class IncrementalLocalTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.server=ThreadingHTTPServer(("127.0.0.1",0),partial(Quiet,directory=str(ROOT)))
+        Thread(target=cls.server.serve_forever,daemon=True).start()
+        cls.url=f"http://127.0.0.1:{cls.server.server_port}/app/sync-incremental-local.mjs"
+        cls.pw=sync_playwright().start()
+        cls.browser=cls.pw.chromium.launch(headless=True)
+    @classmethod
+    def tearDownClass(cls):
+        cls.browser.close();cls.pw.stop();cls.server.shutdown();cls.server.server_close()
+    def test_persistence_lease_cache_and_isolation(self):
+        ctx=self.browser.new_context()
+        try:
+            page=ctx.new_page();page.goto(self.url)
+            result=page.evaluate("""async()=>{
+              const {openIncrementalLabStore,drainIncrementalLab}=await import('./sync-incremental-local.mjs');
+              const {prepareIncremental}=await import('./sync-incremental.mjs');
+              const {makeIncrementalWire}=await import('./sync-incremental-wire.mjs');
+              const {generateRecoveryCode,unlockRecoveryCode}=await import('./shared-crypto.mjs');
+              const key=await unlockRecoveryCode(await generateRecoveryCode()),m=crypto.randomUUID(),scope={userId:crypto.randomUUID(),archiveId:crypto.randomUUID(),keyId:key.keyId};
+              const c={archiveId:scope.archiveId,memoryId:m,operationId:crypto.randomUUID(),revision:1};
+              const record={id:m,schemaVersion:3,kind:'letter',title:'SECRET TEST',date:'',from:'',to:'',note:'',tags:[],favorite:false,createdAt:'2026-11-25',updatedAt:'2026-11-25',pages:[{id:'p',caption:'',front:new Blob([new Uint8Array(100)],{type:'image/png'}),back:null,frontDerived:null,backDerived:null,frontCrop:null,backCrop:null}]};
+              const d=await prepareIncremental(key,c,record),w=await makeIncrementalWire(d);
+              let store=await openIncrementalLabStore(scope);await store.prepare(m,w.wire,w.chunk);store.close();
+              store=await openIncrementalLabStore(scope);
+              const before=await store.status(m),other=await openIncrementalLabStore({...scope,userId:crypto.randomUUID()}),isolated=await other.status(m);other.close();
+              const j=await store.claim(m),competing=await store.claim(m),renewed=await store.renew(m,j.token);
+              const stale=await store.finish(m,crypto.randomUUID(),{state:'error'});
+              await store.finish(m,j.token,{state:'error'});store.close();
+              store=await openIncrementalLabStore(scope);
+              const result=await drainIncrementalLab({store,memoryId:m,authorize:async()=>scope,remote:{publish:async(wire,read)=>{if(wire.header.operationId!==c.operationId)throw Error('wrong operation');const b=wire.uploads[0].chunks[0];if((await read(b.path)).length!==b.size)throw Error('wrong bytes');return {state:'synced',operationId:c.operationId,revision:1,replayed:true};}}});
+              const after=await store.status(m),ref=d.header.refs[0],bytes=d.newAssets[0].ciphertext;
+              let calls=0;const load=async()=>{calls++;return bytes;};
+              const cold=await store.cached(m,ref,load),warm=await store.cached(m,ref,load);
+              const dbs=await indexedDB.databases();store.close();
+              return {before,isolated,competing,renewed,stale,result,after,cold:cold.hit,warm:warm.hit,calls,dbs:dbs.map(x=>x.name)};
+            }""")
+            self.assertEqual(result["before"]["pending"]["state"],"pending")
+            self.assertIsNone(result["isolated"]["pending"])
+            self.assertIsNone(result["competing"])
+            self.assertTrue(result["renewed"])
+            self.assertFalse(result["stale"])
+            self.assertEqual(result["result"]["state"],"synced")
+            self.assertIsNone(result["after"]["pending"])
+            self.assertFalse(result["cold"])
+            self.assertTrue(result["warm"])
+            self.assertEqual(result["calls"],1)
+            self.assertNotIn("nuestro-archivo-cartas-v1",result["dbs"])
+            self.assertNotIn("SECRET TEST",str(result["after"]))
+        finally:
+            ctx.close()

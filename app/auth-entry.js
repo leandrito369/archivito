@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { inspectKeyAccess, createSessionKeyGate } from "./session-key.mjs";
 import { createFixtureUI } from "./sync-fixture-ui.mjs";
 import { createV3LabUI } from "./sync-v3-lab-ui.mjs";
+import { createIncrementalLabUI } from "./sync-incremental-lab-ui.mjs";
 
 const status = document.querySelector("#status");
 const login = document.querySelector("#login");
@@ -14,8 +15,9 @@ const $=id=>document.getElementById(id);
 const keyStatus=$("key-status"), keyCode=$("key-code");
 const fixture=createFixtureUI({getClient:()=>client,getGate:()=>gate});
 const v3Lab=createV3LabUI({getClient:()=>client,getGate:()=>gate,url,publishableKey:key});
+const incLab=createIncrementalLabUI({getClient:()=>client,getGate:()=>gate,url,publishableKey:key});
 function clearKeyPanel(){
- fixture.clear();v3Lab.clear();
+ fixture.clear();v3Lab.clear();incLab.clear();
  keyEpoch++;gate?.clear();$("key-panel").hidden=true;keyCode.value="";keyCode.type="password";$("key-show").checked=false;$("key-fingerprint").textContent="";keyStatus.textContent="";
 }
 function showKeyPanel(access){
@@ -27,7 +29,7 @@ function showKeyPanel(access){
  $("key-fingerprint").textContent=access.fingerprint?"Huella registrada: "+access.fingerprint:"";
 }
 async function keyAction(action){
- fixture.clear();v3Lab.clear();
+ fixture.clear();v3Lab.clear();incLab.clear();
  const e=++keyEpoch;
  $("key-generate").disabled=true;$("key-unlock").disabled=true;
  try{
@@ -40,7 +42,7 @@ async function keyAction(action){
   }else{
    const code=keyCode.value.trim();keyCode.value="";keyCode.type="password";$("key-show").checked=false;
    await gate.unlock(code);
-   if(e===keyEpoch){keyStatus.textContent="Clave verificada y desbloqueada en memoria. Sólo laboratorio ficticio.";v3Lab.reveal();}
+   if(e===keyEpoch){keyStatus.textContent="Clave verificada y desbloqueada en memoria. Sólo laboratorio ficticio.";v3Lab.reveal();incLab.reveal();}
   }
  }catch{if(e===keyEpoch){keyCode.value="";keyStatus.textContent="Operación rechazada. Revisá la clave o volvé a comprobar el acceso.";}}
  finally{if(e===keyEpoch){$("key-generate").disabled=false;$("key-unlock").disabled=false;}}
@@ -48,7 +50,7 @@ async function keyAction(action){
 $("key-show").onchange=()=>{keyCode.type=$("key-show").checked?"text":"password";};
 $("key-generate").onclick=()=>keyAction("generate");
 $("key-unlock").onclick=()=>keyAction("unlock");
-$("key-lock").onclick=()=>{fixture.clear();v3Lab.clear();keyEpoch++;gate?.lock();keyCode.value="";keyCode.type="password";$("key-show").checked=false;$("key-generate").disabled=false;$("key-unlock").disabled=false;keyStatus.textContent="Clave bloqueada.";};
+$("key-lock").onclick=()=>{fixture.clear();v3Lab.clear();incLab.clear();keyEpoch++;gate?.lock();keyCode.value="";keyCode.type="password";$("key-show").checked=false;$("key-generate").disabled=false;$("key-unlock").disabled=false;keyStatus.textContent="Clave bloqueada.";};
 addEventListener("pagehide",()=>{++seq;clearKeyPanel();});
 function show(message){status.textContent = message;}
 function render(state){
