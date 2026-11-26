@@ -36,13 +36,13 @@ export function createSessionKeyGate(readAccess){
    const {e,next}=await fresh();
    if(!unlocked)throw Error("Clave bloqueada.");
    const current=unlocked;
-   const authorize=async()=>{
+   // This synchronous check only protects the local epoch; it is not remote authorization.
+   const localGuard=()=>{
     if(e!==epoch||unlocked!==current)throw Error("Clave bloqueada.");
-    const again=await fresh();
-    if(e!==epoch||unlocked!==current)throw Error("Clave bloqueada.");
-    return {userId:again.next.userId,archiveId:again.next.archiveId,keyId:current.keyId,role:again.next.role,unlocked:true};
+    return {userId:next.userId,archiveId:next.archiveId,keyId:current.keyId,role:next.role,unlocked:true};
    };
-   const value=await work(current,await authorize(),authorize);
+   const authorize=async()=>{localGuard();await fresh();return localGuard();};
+   const value=await work(current,localGuard(),authorize,localGuard);
    await authorize();
    return value;
   },

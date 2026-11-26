@@ -36,3 +36,13 @@ test("logout durante verificación invalida el resultado",async()=>{
  await gate.refresh();delayed=true;const pending=gate.unlock(code);gate.clear();release(a);
  await assert.rejects(pending);assert.equal(gate.isUnlocked(),false);
 });
+
+test("local epoch guard uses no network and fails immediately after lock",async()=>{
+ const code=await generateRecoveryCode(),fingerprint=(await unlockRecoveryCode(code)).keyId;
+ let reads=0;const gate=createSessionKeyGate(async()=>{reads++;return {...base,fingerprint};});
+ await gate.refresh();await gate.unlock(code);
+ await assert.rejects(gate.withUnlocked(async(key,scope,authorize,localGuard)=>{
+  const before=reads;assert.deepEqual(localGuard(),scope);assert.deepEqual(localGuard(),scope);assert.equal(reads,before);
+  await authorize();assert.equal(reads,before+1);gate.lock();assert.throws(localGuard);
+ }));
+});

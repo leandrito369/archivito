@@ -52,7 +52,8 @@ async function sample(id){
 function proof(record,base,pending){
  return {title:record?.title??null,revision:base?.revision??0,pending:pending?.state??null,pages:record?.pages?.length??0,assets:record?.pages?.reduce((n,p)=>n+["front","back","frontDerived","backDerived"].filter(k=>p[k]).length,0)??0,large:record?.pages?.[0]?.front?.size??0};
 }
-export async function runV3Lab({scope,key,authorize,remote,action}){
+export async function runV3Lab({scope,key,authorize,remote,action,metrics}){
+ const measure=(phase,work)=>metrics?metrics.measure(phase,work):work();
  await authorize();
  if(!["create","read","edit","retry"].includes(action))throw Error("Acción inválida.");
  const identity=await openV3IdentityMap(scope,options);let outbox;
@@ -61,13 +62,13 @@ export async function runV3Lab({scope,key,authorize,remote,action}){
   // One per account in this origin. Neither this DB nor its IDs touch the personal library.
   let binding=await identity.byRemote(LAB_MEMORY);
   const id=binding?.localId??crypto.randomUUID();
-  let record=await local("readonly",s=>req(s.get(id)));
+  let record=await measure("snapshot",()=>local("readonly",s=>req(s.get(id))));
   let status=await outbox.status(LAB_MEMORY);
   if(action==="read"){
    const value=await remote.read(LAB_MEMORY,status.pull?.target.revision);
    if(!value)return {state:"empty",...proof(record,status.base,status.pending)};
    await authorize();
-   const result=await applyV3Pull({scope,key,...value,localId:id,validateImage,makeThumb,laboratory:true});
+   const result=await measure("apply",()=>applyV3Pull({scope,key,...value,localId:id,validateImage,makeThumb,laboratory:true}));
    status=await outbox.status(LAB_MEMORY);record=await local("readonly",s=>req(s.get(id)));
    return {...proof(record,status.base,status.pending),state:result.state};
   }
@@ -79,7 +80,7 @@ export async function runV3Lab({scope,key,authorize,remote,action}){
    if(scope.role!=="owner"||status.base||status.pull)throw Error("Creación no autorizada.");
    if(await remote.read(LAB_MEMORY))return {state:"already-remote",...proof(record,status.base,status.pending)};
    if(!binding){binding=await identity.bind(id,LAB_MEMORY);}
-   if(!record){const r=await sample(id);await authorize();await local("readwrite",s=>req(s.add(r)));record=r;}
+   if(!record){const r=await measure('sample',()=>sample(id));await authorize();await local("readwrite",s=>req(s.add(r)));record=r;}
   }else{
    if(!record||!status.base||status.pull||status.base.revision>=3)return {state:"read-first-or-limit",...proof(record,status.base,status.pending)};
    const g=record.syncGeneration;
@@ -91,8 +92,8 @@ export async function runV3Lab({scope,key,authorize,remote,action}){
    });
   }
   await authorize();
-  if(action!=="retry")await outbox.prepare({key,record,remoteId:LAB_MEMORY,base:status.base});
-  const result=await drainV3Once({outbox,remote,authorize});status=await outbox.status(LAB_MEMORY);
+  if(action!=="retry")await measure("prepare",()=>outbox.prepare({key,record,remoteId:LAB_MEMORY,base:status.base}));
+  const result=await drainV3Once({outbox,remote,authorize,metrics});status=await outbox.status(LAB_MEMORY);
   return {...proof(record,status.base,status.pending),state:result.state};
  }finally{outbox?.close();identity.close();}
 }
