@@ -102,10 +102,61 @@ class Lab:
         require(code.count(old)==1,"unexpected entrypoint import")
         entry.write_text(code.replace(old,"../_shared/archivito/server/sync-incremental-fenced-service.mjs"))
         passed("fresh project configuration and isolated Edge package")
+    def start_diagnostics(self,stdout,stderr,reason):
+        # Allowlisted classifications only: never emit raw CLI output, URLs,
+        # credentials, container environment, or health-check output.
+        patterns={
+            "image_pull":r"pull access denied|failed to pull|manifest unknown|toomanyrequests|image pull",
+            "healthcheck":r"unhealthy|health.check|health check",
+            "network":r"connection refused|dns error|network error|i/o timeout|failed to connect",
+            "resources":r"no space left|out of memory|cannot allocate memory|oom",
+            "port_conflict":r"address already in use|port is already allocated",
+            "edge":r"edge.runtime|worker boot|failed to resolve|module not found",
+            "database":r"database system|postgres|migration failed",
+            "permission":r"permission denied|access denied",
+            "timeout":r"timed out|timeout|deadline exceeded"}
+        def classify(value):
+            if isinstance(value,bytes): value=value.decode("utf-8",errors="replace")
+            return {k:bool(re.search(v,value or "",re.I)) for k,v in patterns.items()}
+        print("START_DIAG "+json.dumps({"reason":reason,"stdout":classify(stdout),
+              "stderr":classify(stderr)}),flush=True)
+        try:
+            listing=self.docker("ps","-a","--filter","name="+self.project,
+                                "--format","{{.Names}}",allow_fail=True)
+            if listing.returncode:
+                print("START_HEALTH unavailable",flush=True)
+                return
+            components=("db","auth","rest","storage","edge_runtime","kong","realtime",
+                        "studio","meta","analytics","vector","pooler","inbucket","imgproxy","mailpit")
+            for name in listing.stdout.splitlines():
+                component=next((c for c in components if name=="supabase_"+c+"_"+self.project),None)
+                if component is None: continue
+                info=self.docker("inspect","--format",
+                    "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.State.ExitCode}}|{{.State.OOMKilled}}",
+                    name,allow_fail=True)
+                fields=info.stdout.strip().split("|")
+                if info.returncode or len(fields)!=4:
+                    print("START_HEALTH "+json.dumps({"component":component,"available":False}),flush=True)
+                    continue
+                state,health,code,oom=fields
+                print("START_HEALTH "+json.dumps({"component":component,
+                    "state":state if state in ("created","running","paused","restarting","removing","exited","dead") else "unknown",
+                    "health":health if health in ("starting","healthy","unhealthy","none") else "unknown",
+                    "exit_code":int(code) if re.fullmatch(r"[0-9]{1,3}",code) else None,
+                    "oom":oom=="true"}),flush=True)
+        except (OSError,subprocess.SubprocessError,Stop):
+            print("START_HEALTH unavailable",flush=True)
     def start(self):
         self.started=True
         print("PHASE starting pinned local Docker services",flush=True)
-        self.cmd(["supabase","start"],timeout=1200)
+        try:
+            result=self.cmd(["supabase","start"],timeout=1200,allow_fail=True)
+        except subprocess.TimeoutExpired as exc:
+            self.start_diagnostics(exc.stdout,exc.stderr,"timeout")
+            raise Stop("supabase start timeout") from None
+        if result.returncode:
+            self.start_diagnostics(result.stdout,result.stderr,"nonzero")
+            raise Stop("command failed: supabase start")
         require(self.docker("inspect","--format","{{.Name}}",self.db).stdout.strip()=="/"+self.db,"wrong DB container")
         names=self.docker("ps","--filter","name="+self.project,"--format","{{.Names}} {{.Image}}").stdout.splitlines()
         for component in ("supabase_db_","supabase_auth_","supabase_rest_","supabase_storage_","supabase_edge_runtime_"):
