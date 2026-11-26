@@ -41,6 +41,7 @@ export async function runIncrementalLab({scope,key,authorize,remote,action,size,
   }
   if(action==="retry"){
    if(!s.pending||s.pending.state==="conflict")return {state:s.pending?.state??"idle",revision:s.wire?.header.revision??0};
+   newAssets=s.pending.newAssets;newBytes=s.pending.newBytes;
   }else{
    if(s.pending)return {state:"pending-exists",pending:s.pending.state,revision:s.wire?.header.revision??0};
    let r,prior=null,base=null;

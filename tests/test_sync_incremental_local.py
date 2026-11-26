@@ -60,3 +60,57 @@ class IncrementalLocalTests(unittest.TestCase):
             self.assertNotIn("SECRET TEST",str(result["after"]))
         finally:
             ctx.close()
+
+    def test_synthetic_lab_recovery_metadata_cache_and_conflict(self):
+        ctx=self.browser.new_context()
+        try:
+            page=ctx.new_page();page.goto(self.url)
+            result=page.evaluate("""async()=>{
+              const {runIncrementalLab}=await import('./sync-incremental-lab.mjs');
+              const {validateIncrementalWire}=await import('./sync-incremental-wire.mjs');
+              const {createIncrementalTransport}=await import('./sync-incremental-transport.mjs');
+              const {generateRecoveryCode,unlockRecoveryCode}=await import('./shared-crypto.mjs');
+              const key=await unlockRecoveryCode(await generateRecoveryCode()),archiveId=crypto.randomUUID();
+              const a={archiveId,userId:crypto.randomUUID(),keyId:key.keyId,role:'owner'},b={...a,userId:crypto.randomUUID(),role:'editor'};
+              const t=createIncrementalTransport(),wires=new Map();
+              let lose=true;
+              const reorder=x=>Array.isArray(x)?x.map(reorder):x&&typeof x==='object'?Object.fromEntries(Object.keys(x).sort().map(k=>[k,reorder(x[k])])):x;
+              const remote={
+                async publish(w,read){
+                  const h=validateIncrementalWire(w),newAssets=[];
+                  for(const u of w.uploads){const ref=h.refs.find(r=>r.id===u.id),ciphertext=new Uint8Array(ref.size);let offset=0;for(const c of u.chunks){const b=await read(c.path);ciphertext.set(b,offset);offset+=b.length;}newAssets.push({id:u.id,ciphertext});}
+                  const r=await t.publish({header:h,newAssets},w.base);
+                  if(r.state==='synced')wires.set(h.operationId,w);
+                  if(lose){lose=false;throw Error('lost confirmation');}
+                  return r;
+                },
+                async manifest(m,op=null){
+                  const head=t.latest(archiveId,m);const original=op===null?wires.get(head?.operationId):wires.get(op);
+                  if(!original)return null;
+                  const wire=reorder(original),header=validateIncrementalWire(wire);
+                  return {wire,header,expected:{archiveId,memoryId:m,operationId:header.operationId,revision:header.revision,keyId:key.keyId}};
+                },
+                readAsset:(expected,ref)=>t.readAsset(expected,ref)
+              };
+              const run=(scope,action)=>runIncrementalLab({scope,key,authorize:async()=>scope,remote,action,size:'small'});
+              const first=await run(a,'create'),retry=await run(a,'retry'),aRead=await run(a,'read'),bRead=await run(b,'read'),bWarm=await run(b,'read'),edit=await run(b,'edit'),aUpdate=await run(a,'read'),photo=await run(a,'photo'),conflict=await run(b,'edit');
+              return {first,retry,aRead,bRead,bWarm,edit,aUpdate,photo,conflict,audit:t.audit(archiveId),dbs:(await indexedDB.databases()).map(d=>d.name)};
+            }""")
+            self.assertEqual(result["first"]["state"],"error")
+            self.assertEqual(result["first"]["pending"],"error")
+            self.assertEqual(result["retry"]["state"],"synced")
+            self.assertTrue(result["retry"]["replayed"])
+            self.assertGreater(result["retry"]["newBytes"],0)
+            self.assertEqual(result["aRead"]["state"],"applied")
+            self.assertEqual(result["bRead"]["hits"],0)
+            self.assertEqual(result["bWarm"]["hits"],2)
+            self.assertEqual(result["bWarm"]["downloadBytes"],0)
+            self.assertEqual(result["edit"]["newBytes"],0)
+            self.assertEqual(result["aUpdate"]["hits"],2)
+            self.assertEqual(result["photo"]["newAssets"],1)
+            self.assertEqual(result["conflict"]["state"],"conflict")
+            self.assertEqual(result["audit"]["revisions"],3)
+            self.assertEqual(result["audit"]["assets"],3)
+            self.assertNotIn("nuestro-archivo-cartas-v1",result["dbs"])
+        finally:
+            ctx.close()

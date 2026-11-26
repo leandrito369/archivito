@@ -10,6 +10,7 @@ async function open(){
  return new Promise((ok,no)=>{const r=indexedDB.open(DB,1);r.onupgradeneeded=()=>{for(const n of ["jobs","heads","cache"])r.result.createObjectStore(n,{keyPath:"id"});};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error);r.onblocked=()=>no(Error("Base bloqueada."));});
 }
 const same=(a,b)=>a===null||b===null?a===b:a.revision===b.revision&&a.operationId===b.operationId;
+const canonical=x=>Array.isArray(x)?x.map(canonical):x&&typeof x==='object'?Object.fromEntries(Object.keys(x).sort().map(k=>[k,canonical(x[k])])):x;
 const baseOf=w=>w?{revision:w.header.revision,operationId:w.header.operationId}:null;
 export async function openIncrementalLabStore(scope){
  if(!uuid(scope?.userId)||!uuid(scope?.archiveId)||!hex(scope?.keyId))fail();
@@ -23,7 +24,7 @@ export async function openIncrementalLabStore(scope){
  }
  return {
   close:()=>db.close(),
-  async status(m){return tx(["jobs","heads"],"readonly",async(j,h)=>{const job=await req(j.get(id(m))),head=await req(h.get(id(m)));return {pending:job?{state:job.state,revision:job.wire.header.revision}:null,wire:head?.wire??null};});},
+  async status(m){return tx(["jobs","heads"],"readonly",async(j,h)=>{const job=await req(j.get(id(m))),head=await req(h.get(id(m)));return {pending:job?{state:job.state,revision:job.wire.header.revision,newAssets:job.wire.uploads.length,newBytes:job.chunks.reduce((n,c)=>n+c.bytes.length,0)}:null,wire:head?.wire??null};});},
   async prepare(m,input,readChunk){
    const w=structuredClone(input),h=scoped(w,m),chunks=[];let size=new TextEncoder().encode(JSON.stringify(w)).length;
    for(const u of w.uploads)for(const b of u.chunks){const x=await readChunk(b.path);if(!(x instanceof Uint8Array)||x.length!==b.size)fail();const bytes=x.slice();if(await sha256Hex(bytes)!==b.sha256)fail();size+=bytes.length;if(size>LIMIT)fail();chunks.push({path:b.path,bytes});}
@@ -60,7 +61,7 @@ export async function openIncrementalLabStore(scope){
    return tx(["jobs","heads"],"readwrite",async(j,heads)=>{
     if(await req(j.get(id(m))))fail();
     const old=await req(heads.get(id(m))),base=baseOf(old?.wire??null);
-    if(base&&(h.revision<base.revision||h.revision===base.revision&&(h.operationId!==base.operationId||JSON.stringify(old.wire)!==JSON.stringify(w))))fail();
+    if(base&&(h.revision<base.revision||h.revision===base.revision&&(h.operationId!==base.operationId||JSON.stringify(canonical(old.wire))!==JSON.stringify(canonical(w)))))fail();
     await req(heads.put({id:id(m),wire:w}));return true;
    });
   },
