@@ -26,6 +26,7 @@ test("A publishes, B edits metadata, A reads; assets stored once and exact retry
  assert.equal((await l.decode(t,l.a,two)).title,"Edición B");
  assert.equal((await l.decode(t,l.a,l.one)).title,"Original");
  assert.equal((await t.publish(l.one,null)).replayed,true);assert.equal((await t.publish(two,head(l.one))).replayed,true);
+ assert.equal((await t.publish(two,{operationId:l.one.header.operationId,revision:1})).replayed,true);
  assert.deepEqual(t.audit(l.c.archiveId),after);
 });
 test("parallel CAS rejects losing edit without storing orphan assets",async()=>{

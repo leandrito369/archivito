@@ -30,7 +30,7 @@ async function fingerprint(d,base){
  }
  assets.sort((a,b)=>a[0].localeCompare(b[0]));
  const serialized=headerBytes(h);
- return {hash:await sha256Hex(enc.encode(JSON.stringify([base,await sha256Hex(serialized),assets]))),headerSize:serialized.byteLength};
+ return {hash:await sha256Hex(enc.encode(JSON.stringify([base===null?null:[base.revision,base.operationId],await sha256Hex(serialized),assets]))),headerSize:serialized.byteLength};
 }
 function validateBase(base,revision){
  if(base===null){if(revision!==1)fail();return;}
