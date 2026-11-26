@@ -8,6 +8,8 @@ on:
       - 'docs/sql/cloud_03_5c3b2a_closed_rpc.sql'
       - 'docs/sql/cloud_03_5c3b2b_storage_catalog.sql'
       - 'tests/sql/test_incremental_cert_multisession.py'
+      - 'docs/sql/cloud_03_5c3b3d3_http_acl_candidate.sql'
+      - 'tests/sql/test_incremental_cert_acl.py'
       - '.github/workflows/incremental-cert-sql.yml'
   workflow_dispatch:
 permissions:
@@ -42,3 +44,7 @@ jobs:
         env:
           PG_CONTAINER: ${{ job.services.postgres.id }}
         run: python3 tests/sql/test_incremental_cert_multisession.py
+      - name: Privilegios efectivos y RPC HTTP guardada
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: python3 tests/sql/test_incremental_cert_acl.py
