@@ -49,3 +49,19 @@ test("invalid receipt, abort and lock cannot acknowledge success",async()=>{
  const controller=new AbortController();controller.abort();await assert.rejects(l.remote.publish(l.w.wire,l.w.chunk,{signal:controller.signal}));
  l.st.locked=true;await assert.rejects(l.remote.manifest(l.c.memoryId));
 });
+
+test("lease loss prevents the next HTTP request and rejects stale response",async()=>{
+ const l=await lab();
+ let checks=0;
+ await assert.rejects(l.remote.publish(l.w.wire,l.w.chunk,{assertLease:async()=>{if(++checks===3)throw Error("lease expired");}}));
+ assert.deepEqual(l.calls,["begin"]);
+ assert.equal(l.objects.size,0);
+ assert.equal(l.committed.size,0);
+ l.calls.length=0;
+ await assert.rejects(l.remote.publish(l.w.wire,l.w.chunk,{assertLease:async()=>{if(l.calls.includes("block"))throw Error("lease replaced");}}));
+ assert.deepEqual(l.calls,["begin","block"]);
+ assert.equal(l.committed.size,0);
+ const result=await l.remote.publish(l.w.wire,l.w.chunk,{assertLease:async()=>{}});
+ assert.equal(result.state,"synced");
+ assert.equal(l.objects.size,2);
+});
