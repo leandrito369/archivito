@@ -43,3 +43,4 @@ jobs:
           npm run test:incremental-retention
           npm run test:retention-approval
           npm run test:incremental-wire
+          npm run test:incremental-service
