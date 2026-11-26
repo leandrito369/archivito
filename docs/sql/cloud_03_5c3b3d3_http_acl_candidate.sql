@@ -110,7 +110,7 @@ create function archivito_inc_cert_candidate.dispatch(
  p_actor uuid,p_session uuid,p_action text,p_archive uuid,p_wire jsonb default null,
  p_memory uuid default null,p_operation uuid default null,p_asset uuid default null,
  p_hash text default null,p_generation bigint default null,p_token uuid default null
-) returns jsonb language plpgsql security definer set search_path='' set lock_timeout='5s' as $
+) returns jsonb language plpgsql security definer set search_path='' set lock_timeout='5s' as $$
 declare win archivito_inc_cert_candidate.windows%rowtype; i record; f archivito_inc_cert_candidate.fences%rowtype;
  result jsonb; mem uuid;
 begin
