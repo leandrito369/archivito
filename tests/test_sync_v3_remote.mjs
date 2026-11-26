@@ -6,11 +6,11 @@ import {generateRecoveryCode,unlockRecoveryCode} from "../app/shared-crypto.mjs"
 import {encodeV3Record} from "../app/sync-v3-contract.mjs";
 import {makeV3Wire,CHUNK} from "../app/sync-v3-wire.mjs";
 import {createV3Remote,drainV3Once} from "../app/sync-v3-remote.mjs";
-async function lab(options={}){
+async function lab(options={},imageBytes=CHUNK+2){
  const key=await unlockRecoveryCode(await generateRecoveryCode());
  const c={archiveId:randomUUID(),memoryId:randomUUID(),operationId:randomUUID(),revision:1};
  const scope={userId:randomUUID(),archiveId:c.archiveId,keyId:key.keyId,role:"owner",unlocked:true};
- const record={id:"local",schemaVersion:3,kind:"letter",title:"Ficticio",date:"",from:"",to:"",note:"",tags:[],favorite:false,createdAt:"2026-11-25",updatedAt:"2026-11-25",pages:[{id:"p",caption:"",front:new Blob([new Uint8Array(CHUNK+2)],{type:"image/png"}),back:null,frontDerived:null,backDerived:null,frontCrop:null,backCrop:null}]};
+ const record={id:"local",schemaVersion:3,kind:"letter",title:"Ficticio",date:"",from:"",to:"",note:"",tags:[],favorite:false,createdAt:"2026-11-25",updatedAt:"2026-11-25",pages:[{id:"p",caption:"",front:new Blob([new Uint8Array(imageBytes)],{type:"image/png"}),back:null,frontDerived:null,backDerived:null,frontCrop:null,backCrop:null}]};
  const packet=await encodeV3Record(key,c,record),wire=await makeV3Wire(packet,0),paths=wire.header.assets[0].chunks.map(c=>c.path);
  const state={verified:new Set(),calls:[],failBlock:false,wrong:false,revoked:false,corrupt:false,conflict:false};
  const row={header:wire.header,revision:1,operation_id:c.operationId,memory_id:c.memoryId,archive_id:c.archiveId};
@@ -85,4 +85,38 @@ test("epoch invalidation during parallel batch prevents commit",async()=>{
   return l.fetcher(url,opts);
  }});
  await assert.rejects(r.publish(l.packet,0));assert.equal(commit,false);
+});
+
+test("synthetic comparative benchmark: three sizes, fixed simulated delays, identical ciphertext",async t=>{
+ const {createV3Metrics}=await import("../app/sync-v3-metrics.mjs");
+ const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+ for(const bytes of [262144,CHUNK+2,3*CHUNK+2]){
+  const l=await lab({},bytes),rows=[];
+  for(const optimized of [false,true]){
+   const samples=[];let checkCount,peakCount;
+   for(let i=0;i<3;i++){
+    l.state.verified.clear();l.state.calls.length=0;
+    let checks=0,active=0,peak=0;
+    const metrics=createV3Metrics();
+    const remote=createV3Remote({client:l.client,url:"https://test.supabase.co",publishableKey:"sb_publishable_test",scope:l.scope,
+     authorize:async()=>{checks++;await sleep(3);return l.scope;},localGuard:optimized?()=>l.scope:undefined,concurrency:optimized?2:1,enabled:true,metrics,
+     fetcher:async(url,opts)=>{
+      const action=new URL(url).searchParams.get("action");
+      if(action!=="block"){await sleep(5);return l.fetcher(url,opts);}
+      active++;peak=Math.max(peak,active);try{await sleep(20);return await l.fetcher(url,opts);}finally{active--;}
+     }});
+    const start=performance.now();
+    assert.equal((await remote.publish(l.packet,0)).state,"synced");
+    samples.push(Math.round(performance.now()-start));
+    assert.equal(active,0);
+    assert.equal(metrics.snapshot().find(x=>x.phase==="block").count,l.paths.length);
+    assert.equal(checks,optimized?4+Math.ceil(l.paths.length/2):1+3*(l.paths.length+2));
+    assert.equal(peak,Math.min(l.paths.length,optimized?2:1));
+    checkCount=checks;peakCount=peak;
+   }
+   samples.sort((a,b)=>a-b);
+   rows.push({mode:optimized?"optimized":"reference",auth:checkCount,peak:peakCount,p50_ms:samples[1],max_ms:samples[2],samples_ms:samples});
+  }
+  t.diagnostic(JSON.stringify({synthetic_bytes:bytes,blocks:l.paths.length,rows,network:"simulated only"}));
+ }
 });
