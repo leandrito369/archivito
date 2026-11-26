@@ -4,6 +4,10 @@ on:
     paths:
       - 'docs/sql/cloud_03_5c3b3d_cert_fence_candidate.sql'
       - 'tests/sql/cloud_03_5c3b3d_cert_fence_lab.sql'
+      - 'docs/sql/cloud_03_5c3b3d_fenced_rpc_candidate.sql'
+      - 'docs/sql/cloud_03_5c3b2a_closed_rpc.sql'
+      - 'docs/sql/cloud_03_5c3b2b_storage_catalog.sql'
+      - 'tests/sql/test_incremental_cert_multisession.py'
       - '.github/workflows/incremental-cert-sql.yml'
   workflow_dispatch:
 permissions:
@@ -34,3 +38,7 @@ jobs:
           docker cp tests/sql/cloud_03_5c3b3d_cert_fence_lab.sql "$PG_CONTAINER:/lab/tests/sql/"
           docker exec "$PG_CONTAINER" psql -X -U postgres -d archivito_cert_lab -v ON_ERROR_STOP=1 -f /lab/tests/sql/cloud_03_5c3b3d_cert_fence_lab.sql
           docker exec "$PG_CONTAINER" psql -X -U postgres -d archivito_cert_lab -v ON_ERROR_STOP=1 -c "DO \$\$ BEGIN IF to_regnamespace('archivito_inc_cert_candidate') IS NOT NULL THEN RAISE EXCEPTION 'rollback failed'; END IF; END \$\$;"
+      - name: Carreras multisesión y RPC transaccional en contenedor desechable
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: python3 tests/sql/test_incremental_cert_multisession.py
