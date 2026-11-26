@@ -1,10 +1,12 @@
 """D.4E.3: isolated Supabase CLI/Docker stack; no hosted credentials or linking.
 
-CI disposable runner only. All network probes hard-coded to loopback;
+CI disposable runner only. Gateway probes use loopback; direct Edge probes use only the verified private Docker network;
 database access only by docker exec into a uniquely named newly created container.
 """
 import base64
 import json
+import ipaddress
+import yaml
 import os
 from pathlib import Path
 import re
@@ -171,13 +173,14 @@ class Lab:
         require(self.sql("select rolsuper from pg_roles where rolname=current_user;")=="t","local admin not superuser")
         print("POSTGRES "+self.sql("show server_version;"),flush=True)
         passed("real Supabase services running")
-    def request(self,path,key,token=None,body=None,method=None,extra=None):
+    def request(self,path,key,token=None,body=None,method=None,extra=None,*,base=API):
         require(path.startswith("/") and not path.startswith("//"),"invalid path")
         h={"apikey":key,"Content-Type":"application/json"}
         if token is not None:h["Authorization"]="Bearer "+token
         h.update(extra or {})
         data=None if body is None else (body if isinstance(body,bytes) else json.dumps(body).encode())
-        req=urllib.request.Request(API+path,data=data,headers=h,method=method)
+        require(base==API or base==getattr(self,'edge_internal',None),'unapproved API base')
+        req=urllib.request.Request(base+path,data=data,headers=h,method=method)
         try:r=OPENER.open(req,timeout=30)
         except urllib.error.HTTPError as e:r=e
         with r:
@@ -189,6 +192,111 @@ class Lab:
     def edge(self,token,action="manifest",body=None,extra=None,method=None):
         return self.request("/functions/v1/"+FUNCTION+"?action="+action,self.anon,token,
            body,method,{"Origin":ORIGIN,**(extra or {})})
+    def internal_edge(self):
+        # Only the Docker network shared by this lab's Kong and runtime.
+        names=["supabase_kong_"+self.project,"supabase_edge_runtime_"+self.project]
+        nets=[]
+        for name in names:
+            r=self.docker("inspect","--format","{{json .NetworkSettings.Networks}}",name)
+            nets.append(json.loads(r.stdout))
+        common=set(nets[0]) & set(nets[1])
+        require(len(common)==1,"ambiguous isolated Docker network")
+        network=next(iter(common))
+        require(network.endswith(self.project),"unexpected Docker network")
+        addr=ipaddress.ip_address(nets[1][network]["IPAddress"])
+        require(addr.version==4 and any(addr in ipaddress.ip_network(n) for n in ("10.0.0.0/8","172.16.0.0/12","192.168.0.0/16")),"nonprivate Edge address")
+        self.edge_internal="http://"+str(addr)+":9000"
+    def direct_edge(self,method="GET",origin=ORIGIN,extra=None):
+        return self.request("/"+FUNCTION+"?action=manifest",self.anon,self.anon,
+                            method=method,extra={"Origin":origin,**(extra or {})},base=self.edge_internal)
+    def kong_config(self):
+        # Declarative config can contain local secrets; capture in memory, never log.
+        r=self.docker("exec","supabase_kong_"+self.project,"sh","-c",
+                      'test -n "$KONG_DECLARATIVE_CONFIG" && cat "$KONG_DECLARATIVE_CONFIG"')
+        config=yaml.safe_load(r.stdout)
+        require(isinstance(config,dict) and isinstance(config.get("services"),list),"unexpected Kong config")
+        return config
+    def cors_route(self,config):
+        matches=[]
+        for service in config["services"]:
+            for route in service.get("routes",[]) or []:
+                if "/functions/v1/" in (route.get("paths") or []) or "/functions/v1" in (route.get("paths") or []):
+                    matches.append((service,route))
+        require(len(matches)==1,"ambiguous functions route")
+        service,route=matches[0]
+        require(len(service.get("routes") or [])==1,"shared functions service; refuse mutation")
+        require(not any(p.get("name")=="cors" for p in config.get("plugins",[]) or []),
+                "top-level CORS plugin requires separate investigation")
+        scopes=[(scope,scope.get("plugins") or []) for scope in (service,route)]
+        found=[(scope,p) for scope,plugins in scopes for p in plugins if p.get("name")=="cors"]
+        return found
+    def cors_isolation(self):
+        self.internal_edge()
+        direct=self.direct_edge()
+        gateway=self.edge(self.anon,method="GET")
+        for layer,(status,h,d) in (("runtime",direct),("kong",gateway)):
+            print("CORS_LAYER "+json.dumps({"layer":layer,"status":status,
+                  "generic":d=={"error":"rejected"},"origins_exact":h.get_all("Access-Control-Allow-Origin")==[ORIGIN],
+                  "wildcard":("*" in (h.get_all("Access-Control-Allow-Origin") or [])),
+                  "cache_exact":h.get_all("Cache-Control")==["no-store"]}),flush=True)
+        self.check_edge("direct Edge method rejection",*direct,405)
+        config=self.kong_config()
+        found=self.cors_route(config)
+        for _,p in found:
+            origins=(p.get("config") or {}).get("origins") or []
+            print("KONG_CORS_CONFIG "+json.dumps({"enabled":p.get("enabled",True),
+                  "default_or_wildcard":not origins or origins==["*"],
+                  "origin_count":len(origins),
+                  "preflight_continue":(p.get("config") or {}).get("preflight_continue",False)}),flush=True)
+        if gateway[1].get_all("Access-Control-Allow-Origin")==["*"]:
+            require(gateway[0]==405 and gateway[2]=={"error":"rejected"} and gateway[1].get_all("Cache-Control")==["no-store"],
+                    "unexpected gateway response; no CORS mutation")
+            require(len(found)==1,"cannot attribute wildcard to single plugin")
+            scope,plugin=found[0]
+            origins=(plugin.get("config") or {}).get("origins") or []
+            require(plugin.get("enabled",True) and (not origins or origins==["*"]),"unexpected effective CORS policy")
+            # Delegate CORS to the actual function only. No other route, auth
+            # plugin, secret, setting or SQL change. Local runner only.
+            scope["plugins"].remove(plugin)
+            kong="supabase_kong_"+self.project
+            self.docker("exec","-u","0","-i",kong,"sh","-c",
+                'test -n "$KONG_DECLARATIVE_CONFIG" && cat > "$KONG_DECLARATIVE_CONFIG"',
+                stdin=json.dumps(config))
+            require(self.kong_config()==config,"Kong config write mismatch")
+            self.docker("restart",kong,timeout=120)
+            for _ in range(30):
+                try:
+                    result=self.edge(self.anon,method="GET")
+                    if result[0]==405:break
+                except (OSError,urllib.error.URLError):pass
+                time.sleep(1)
+            else:raise Stop("Kong restart did not restore function route")
+            require(self.kong_config()==config,"Kong config changed after restart")
+            require(not self.cors_route(config),"CORS plugin remains on functions route")
+            self.check_edge("Kong after delegation",*result,405)
+            passed("CORS root cause isolated: Kong wildcard plugin removed from local functions route")
+        else:
+            self.check_edge("Kong original method rejection",*gateway,405)
+            require(not found,"unexpected active CORS plugin on functions route")
+        self.cors_regression()
+    def cors_regression(self):
+        headers={"Access-Control-Request-Method":"POST",
+                 "Access-Control-Request-Headers":"authorization,apikey,content-type,x-archivito-generation,x-archivito-fence"}
+        allowed=set(headers["Access-Control-Request-Headers"].split(","))
+        for layer,request in (("runtime",self.direct_edge),
+                              ("kong",lambda method,origin,extra=None:self.edge(self.anon,method=method,extra={"Origin":origin,**(extra or {})}))):
+            status,h,d=request("OPTIONS",ORIGIN,headers)
+            require(status==204 and d is None and h.get_all("Access-Control-Allow-Origin")==[ORIGIN]
+                    and h.get_all("Cache-Control")==["no-store"],"valid preflight "+layer)
+            require(set(x.strip().lower() for x in h.get("Access-Control-Allow-Headers","").split(","))>=allowed
+                    and "POST" in h.get("Access-Control-Allow-Methods","").split(","),"preflight headers "+layer)
+            for method,extra in (("OPTIONS",headers),("GET",None)):
+                status,h,d=request(method,"https://unauthorized.example",extra)
+                # Fixed allowlisted origin is not a grant to the requesting origin.
+                require(status==403 and d=={"error":"rejected"}
+                        and h.get_all("Access-Control-Allow-Origin") in (None,[ORIGIN])
+                        and h.get_all("Cache-Control")==["no-store"],"unauthorized origin "+layer+" "+method)
+            passed("CORS allowed preflight and unauthorized origin rejection "+layer)
     def edge_diagnostics(self,case,status,h,d):
         # Report only response classifications, never raw headers/bodies or
         # container environment. The runner owns these synthetic containers.
@@ -217,7 +325,7 @@ class Lab:
                   "permission":r"permission denied|not permitted"}
         print("EDGE_RUNTIME_DIAG "+json.dumps({k:bool(re.search(v,log,re.I)) for k,v in patterns.items()}),flush=True)
     def check_edge(self,case,status,h,d,expected):
-        ok=status==expected and d=={"error":"rejected"} and h.get("Cache-Control")=="no-store" and h.get("Access-Control-Allow-Origin")==ORIGIN
+        ok=status==expected and d=={"error":"rejected"} and h.get_all("Cache-Control")==["no-store"] and h.get_all("Access-Control-Allow-Origin")==[ORIGIN]
         if not ok:self.edge_diagnostics(case,status,h,d)
         require(ok,case)
     def rpc(self,name,key,token,args):
@@ -338,11 +446,7 @@ class Lab:
         passed(case+" HTTP "+str(status))
     def probe(self):
         self.audit(0)
-        # GET is handled before authentication: distinguishes boot/gateway from
-        # the closed manifest RPC without weakening authorization.
-        status,h,d=self.edge(self.anon,method="GET")
-        self.check_edge("Edge startup method rejection",status,h,d,405)
-        passed("real Edge startup method rejection")
+        self.cors_isolation()
         q={"archiveId":ARCHIVE,"memoryId":MEMORY,"operationId":None}
         for label in "ABC":
             token,session=self.login(label)
