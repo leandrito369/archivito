@@ -40,3 +40,4 @@ jobs:
           npm run test:sync-v3-remote
           npm run test:sync-incremental
           npm run test:incremental-transport
+          npm run test:incremental-retention
