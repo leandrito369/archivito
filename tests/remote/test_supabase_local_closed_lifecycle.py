@@ -10,13 +10,13 @@ import tempfile
 import threading
 import time
 from urllib.parse import urlencode
-import uuid
 
 from test_supabase_local_closed_stack import (
     Lab, ARCHIVE, MEMORY, KEY, SC, BUCKET, Stop, require, passed, lit, uid
 )
 
 TTL=120
+EXPIRY_GRACE=65
 OP="73ac551b-2df8-4da7-91b8-4adf18d83910"
 ASSET="73ac551b-2df8-4da7-91b8-4adf18d83911"
 FENCE="73ac551b-2df8-4da7-91b8-4adf18d83912"
@@ -136,8 +136,8 @@ class LifecycleLab(Lab):
             self.parallel_replay(actors)
             self.expire_window(actors)
             # Do not edit token or server clocks: wait until actual exp + grace.
-            delay=max(0,max(x[3] for x in actors.values())-time.time()+5)
-            require(delay<=TTL+10,"E4 clock skew / expiry bound")
+            delay=max(0,max(x[3] for x in actors.values())-time.time()+EXPIRY_GRACE)
+            require(delay<=TTL+EXPIRY_GRACE+5,"E4 clock skew / expiry bound")
             print("E4_WAIT natural JWT expiry seconds="+str(round(delay,1)),flush=True)
             time.sleep(delay)
             for label,(token,refresh,session,exp) in list(actors.items()):
