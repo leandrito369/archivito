@@ -36,7 +36,7 @@ test("no incluye laboratorios, dependencias completas, datos privados ni respald
   assert.deepEqual(output.map(x=>x.name).toSorted(byName),["_headers","app","index.html"].toSorted(byName));
   const expected=[
     "index.html","digitalizar.html","visor-3d.html","archive-v3.js","local-generation.js",
-    "capture-existing.js","paper-math.js","perspective.js",
+    "backup-plan.js","capture-existing.js","paper-math.js","perspective.js",
     "visor-3d-data.js","visor-three.js","respaldo-v4.html",
     "crypto-v4.js","backup-v4.js","acceso.html","auth-return.js","auth-entry.js"
   ];

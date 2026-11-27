@@ -9,32 +9,58 @@
     :root{color-scheme:dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#17120f;color:#f4e9d9}
     *{box-sizing:border-box}
     body{margin:0;background:radial-gradient(circle at 20% 0%,#393028,#17120f 60%);min-height:100vh}
-    main{width:min(900px,94vw);margin:0 auto;padding:38px 0}
+    main{width:min(920px,94vw);margin:0 auto;padding:38px 0}
     h1{font:normal clamp(28px,4vw,42px) Georgia,serif;margin:16px 0}
     h2{font:normal 24px Georgia,serif;margin:0 0 12px}
+    h3{font:normal 18px Georgia,serif;margin:0 0 8px}
     p{line-height:1.65;color:#c8b7a1}
     .eyebrow{color:#dfad79;font-size:12px;text-transform:uppercase;letter-spacing:.15em}
-    .cards{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin:26px 0}
+    .diag{margin:20px 0 6px;padding:16px 18px;border:1px solid #594634;border-radius:14px;background:#221b16}
+    .diag-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:10px}
+    .diag-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:10px}
+    .diag-item{padding:10px 12px;border:1px solid #44362a;border-radius:10px;background:#1b1511;font-size:13px}
+    .diag-item strong{display:block;color:#f4e9d9;font-size:14px;margin-top:3px}
+    .diag-warnings{margin:10px 0 0;padding-left:18px;color:#f2c98b;font-size:13px;line-height:1.5}
+    .diag.critical{border-color:#bd736e}
+    .cards{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin:22px 0}
     .card{background:#251e19;padding:21px;border:1px solid #594634;border-radius:17px}
     label{display:block;font-size:13px;color:#e1cab1;margin:12px 0 5px}
-    input{font:inherit;width:100%;padding:10px;color:#f6edde;background:#18130f;border:1px solid #745b44;border-radius:9px}
-    button{font:inherit;cursor:pointer;width:100%;margin-top:18px;background:#bc976a;color:#18120c;padding:11px 13px;border:0;border-radius:10px;font-weight:700}
+    input,select{font:inherit;width:100%;padding:10px;color:#f6edde;background:#18130f;border:1px solid #745b44;border-radius:9px}
+    button{font:inherit;cursor:pointer;width:100%;margin-top:16px;background:#bc976a;color:#18120c;padding:11px 13px;border:0;border-radius:10px;font-weight:700}
+    button.secondary{background:#342a22;color:#f4e9d9;border:1px solid #745b44;font-weight:600}
+    button.inline{width:auto;margin-top:0;padding:7px 12px;font-size:13px}
     button:disabled{cursor:wait;opacity:.55}
+    .btn-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
     a{color:#e9ca9f}
+    .preview{margin:16px 0;padding:15px 17px;border:1px solid #7c6248;border-radius:12px;background:#261f19;font-size:13px;line-height:1.55}
+    .preview ul{margin:8px 0 0;padding-left:18px;color:#e4d2bc}
     .warning{margin-top:22px;border:1px solid #8e6746;padding:15px;border-radius:12px;color:#ebcfb2;background:#30241b;font-size:13px;line-height:1.5}
     .status{display:block;margin:16px 0;padding:13px;border:1px solid #5e513e;border-radius:10px;background:#251e19;font-size:13px;color:#d8c2aa;white-space:pre-wrap}
     .status.error{border-color:#bd736e;color:#ffc2bd}
     small{display:block;color:#b7a794;line-height:1.5;margin-top:8px}
     [hidden]{display:none!important}
-    @media(max-width:720px){.cards{grid-template-columns:1fr}main{padding-top:22px}}
+    @media(max-width:720px){.cards,.btn-row{grid-template-columns:1fr}main{padding-top:22px}}
   </style>
 </head>
 <body>
  <main>
-  <div class="eyebrow">Archivito · Preservación 0.4A.1</div>
+  <div class="eyebrow">Archivito · Preservación 0.4A.2</div>
   <h1>Respaldo privado cifrado</h1>
   <p>Protegé una copia completa de tu biblioteca —fotografías originales, reversos, hojas, notas y versiones enderezadas— con una contraseña que sólo vos conocés. Todo se cifra y descifra en tu navegador, sin enviarse a Internet.</p>
   <p><a href="./index.html">← Volver a la biblioteca</a></p>
+  <section id="storage-diag" class="diag" aria-label="Diagnóstico de almacenamiento">
+    <div class="diag-head">
+      <h3>Estado de almacenamiento y respaldo</h3>
+      <button type="button" id="diag-persist" class="secondary inline">Solicitar persistencia</button>
+    </div>
+    <div class="diag-grid">
+      <div class="diag-item">Colección local<strong id="diag-collection">Cargando…</strong></div>
+      <div class="diag-item">Cuota del navegador<strong id="diag-quota">Consultando…</strong></div>
+      <div class="diag-item">Persistencia<strong id="diag-persisted">Consultando…</strong></div>
+      <div class="diag-item">Último respaldo v4<strong id="diag-last-export">Sin registro</strong></div>
+    </div>
+    <ul id="diag-warnings" class="diag-warnings" hidden></ul>
+  </section>
   <div class="cards">
    <section class="card">
     <h2>Exportar copia v4</h2>
@@ -54,16 +80,32 @@
       <input type="file" id="backup-file" accept=".archivito,.json,application/json" required>
       <label for="import-password">Frase de contraseña del respaldo</label>
       <input type="password" id="import-password" autocomplete="off" required>
-      <button type="submit" id="import-button">Verificar y restaurar</button>
+      <label for="conflict-policy">Ante recuerdos con el mismo ID</label>
+      <select id="conflict-policy">
+        <option value="abort" selected>Cancelar si hay IDs repetidos (sin sobrescribir)</option>
+        <option value="skip">Omitir repetidos y agregar sólo los nuevos</option>
+        <option value="duplicate">Conservar ambos (importar repetidos como copia)</option>
+        <option value="replace">Reemplazar recuerdos existentes con el mismo ID</option>
+      </select>
+      <div class="btn-row">
+        <button type="button" id="preview-button" class="secondary">Analizar sin importar</button>
+        <button type="submit" id="import-button">Verificar y restaurar</button>
+      </div>
     </form>
-    <small>Si existe un recuerdo con el mismo ID, se cancela toda la importación: nunca reemplaza datos existentes sin autorización. Recomendamos restaurar en otro perfil de navegador.</small>
+    <small>Por defecto se cancela toda la importación si existe un ID repetido. Usá «Analizar sin importar» para ver nuevos, conflictos y tamaño estimado antes de escribir en IndexedDB.</small>
    </section>
   </div>
+  <section id="import-preview" class="preview" hidden aria-label="Vista previa de importación">
+    <h3>Vista previa del respaldo (sin cambios aplicados)</h3>
+    <p id="preview-summary"></p>
+    <ul id="preview-conflicts" hidden></ul>
+  </section>
   <output id="status" class="status" aria-live="polite">No se realizaron cambios. Usá un perfil de navegador diferente para probar una restauración sin arriesgar tu colección actual.</output>
   <div class="warning"><strong>Antes de continuar:</strong> el archivo cifrado protege el contenido del respaldo, pero no reemplaza las fotografías físicas ni garantiza permanencia de IndexedDB. No compartas tu contraseña, copias sin cifrar ni cartas privadas por GitHub. Esta herramienta no implementa todavía sincronización ni una clave compartida entre dos personas.</div>
  </main>
  <script src="./archive-v3.js"></script>
  <script src="./local-generation.js"></script>
+ <script src="./backup-plan.js"></script>
  <script src="./crypto-v4.js"></script>
  <script src="./backup-v4.js"></script>
 </body>

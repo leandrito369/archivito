@@ -26,6 +26,7 @@ jobs:
         run: |
           npm run build:pages
           npm run test:pages
+          npm run test:backup-plan
           npm run test:auth
           npm run test:crypto
           npm run test:session-key
