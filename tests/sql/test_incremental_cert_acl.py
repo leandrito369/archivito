@@ -34,7 +34,7 @@ def main():
         for r in select schemaname,tablename from pg_tables where schemaname in ('archivito_inc','archivito_inc_cert_candidate') loop
           execute format('alter table %I.%I owner to e56_deploy_admin',r.schemaname,r.tablename);
         end loop;
-        for r in select oid::regprocedure sig from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='archivito_inc_cert_candidate' loop
+        for r in select p.oid::regprocedure sig from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='archivito_inc_cert_candidate' loop
           execute format('alter function %s owner to e56_deploy_admin',r.sig);
         end loop;
       end $$;
@@ -78,9 +78,9 @@ def main():
        and not has_function_privilege('anon','archivito_inc_cert_candidate.object_matches(text,bigint)','EXECUTE')
        and (select pg_get_userbyid(proowner)='archivito_cert_executor' and prosecdef
             from pg_proc where oid='archivito_inc_cert_candidate.dispatch(uuid,uuid,text,uuid,jsonb,uuid,uuid,uuid,text,bigint,uuid)'::regprocedure)
-       and (select pg_get_userbyid(proowner)='e56_deploy_admin' and prosecdef and proconfig @> array['search_path=']
+       and (select pg_get_userbyid(proowner)='e56_deploy_admin' and prosecdef and proconfig && array['search_path=""','search_path=']
             from pg_proc where oid='archivito_inc_cert_candidate.lock_session(uuid,uuid)'::regprocedure)
-       and (select pg_get_userbyid(proowner)='e56_deploy_admin' and prosecdef and proconfig @> array['search_path=']
+       and (select pg_get_userbyid(proowner)='e56_deploy_admin' and prosecdef and proconfig && array['search_path=""','search_path=']
             from pg_proc where oid='archivito_inc_cert_candidate.object_matches(text,bigint)'::regprocedure)
        and (select md5(prosrc)='d010b597b7cc21cae66b9fa09d01e3d0' and not prosecdef
             from pg_proc where oid='public.sync_inc_step(uuid,text,jsonb,uuid,text)'::regprocedure);

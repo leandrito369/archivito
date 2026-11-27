@@ -504,9 +504,9 @@ class Lab:
           and not has_function_privilege('anon','{SC}.object_matches(text,bigint)','EXECUTE')
           and (select pg_get_userbyid(proowner)='archivito_cert_executor' and prosecdef
                from pg_proc where oid='{SC}.dispatch(uuid,uuid,text,uuid,jsonb,uuid,uuid,uuid,text,bigint,uuid)'::regprocedure)
-          and (select pg_get_userbyid(proowner)<>'archivito_cert_executor' and prosecdef and proconfig @> array['search_path=']
+          and (select pg_get_userbyid(proowner)<>'archivito_cert_executor' and prosecdef and proconfig && array['search_path=""','search_path=']
                from pg_proc where oid='{SC}.lock_session(uuid,uuid)'::regprocedure)
-          and (select pg_get_userbyid(proowner)<>'archivito_cert_executor' and prosecdef and proconfig @> array['search_path=']
+          and (select pg_get_userbyid(proowner)<>'archivito_cert_executor' and prosecdef and proconfig && array['search_path=""','search_path=']
                from pg_proc where oid='{SC}.object_matches(text,bigint)'::regprocedure)
           and (select md5(prosrc)='d010b597b7cc21cae66b9fa09d01e3d0' and not prosecdef
                from pg_proc where oid='public.sync_inc_step(uuid,text,jsonb,uuid,text)'::regprocedure)
