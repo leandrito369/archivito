@@ -415,7 +415,7 @@ class Lab:
         require(ok,case)
     def rpc(self,name,key,token,args):
         return self.request("/rest/v1/rpc/"+name,key,token,args)
-    def provision(self):
+    def provision(self, *, candidate=True):
         require(self.sql("select to_regnamespace('archivito_inc') is null and to_regclass('public.archives') is null and (select count(*) from auth.users)=0;")=="t","nonempty local database")
         self.sql("""
           begin;
@@ -450,15 +450,19 @@ class Lab:
         ar=lit(ARCHIVE);k=lit(KEY)
         # All five candidate SQL sources applied unchanged, atomically, to
         # newly created local managed relations. Never DROP the hard constraint.
-        scripts="\n".join((ROOT/"docs/sql"/n).read_text() for n in SOURCES)
+        scripts="\n".join((ROOT/"docs/sql"/n).read_text() for n in (SOURCES if candidate else SOURCES[:2]))
+        window=f"""insert into {SC}.windows values({lit(str(uuid.uuid4()))},{ar},{a},{b},{k},statement_timestamp(),statement_timestamp()+interval '15 minutes',false,67108864,24);""" if candidate else ""
         self.sql("begin;\n"+scripts+f"""
           insert into public.archives(id,key_fingerprint) values({ar},{k});
           insert into public.archive_members(archive_id,user_id,role) values({ar},{a},'owner'),({ar},{b},'editor');
           insert into archivito_inc.gates(archive_id,enabled,quota_bytes) values({ar},false,67108864);
-          insert into {SC}.windows values({lit(str(uuid.uuid4()))},{ar},{a},{b},{k},statement_timestamp(),statement_timestamp()+interval '15 minutes',false,67108864,24);
+          {window}
           notify pgrst,'reload schema';
           commit;
         """)
+        if not candidate:
+            passed("legacy SQL and synthetic managed fixtures installed locally")
+            return
         passed("actual managed Auth/Storage tables and candidate DDL installed locally")
         # Regression against the actual inserted fixture and its validated CHECK.
         require(self.sql(f"select count(*)=1 and coalesce(bool_and(expires_at-opened_at=interval '15 minutes' and not enabled),false) from {SC}.windows where archive_id={ar};")=="t","deterministic closed fixture window duration")
