@@ -292,7 +292,10 @@ class PromotionLab(Lab):
         try:
             holder.stdin.write(f"begin;\nset local role {EXECUTOR};\nselect {SC}.lock_session({lit(self.users['A'])},{lit(session)});\nselect 'LOCKED';\n")
             holder.stdin.flush()
-            require(holder.stdout.readline().strip()=="LOCKED","lock_session holder did not reach barrier")
+            while True:
+                line=holder.stdout.readline()
+                if line.strip()=="LOCKED":break
+                require(bool(line),"lock_session holder did not reach barrier")
             t=threading.Thread(target=do_logout,daemon=True)
             t.start()
             time.sleep(1.2)
