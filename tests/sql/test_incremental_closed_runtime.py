@@ -90,10 +90,11 @@ class Gateway(BaseHTTPRequestHandler):
             violations.append("unexpected POST");return self.reply(500,{"error":"unexpected"})
         try:
             d=json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-            assert set(d)<=RPC_ARGS and d["p_archive"]==ARCHIVE
+            if not (set(d)<=RPC_ARGS and d["p_archive"]==ARCHIVE):
+                raise ValueError("unexpected rpc scope")
             k=next(k for k in ACTORS if ACTORS[k]==d["p_actor"])
-            assert d["p_session"]==SESSIONS[k]
-            assert d["p_action"] in ("head","intent")
+            if d["p_session"]!=SESSIONS[k] or d["p_action"] not in ("head","intent"):
+                raise ValueError("unexpected rpc session or action")
             # Typed parameters rendered from local synthetic test request only.
             # psql uses fixed function name and allowlisted argument identifiers.
             args=[]

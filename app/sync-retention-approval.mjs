@@ -23,9 +23,9 @@ function validateHolds(holds,inventory){
 }
 function canonicalInventory(x,holds){
  return [x.archiveId,x.otherReservedBytes,
- sorted(x.revisions,key).map(r=>[r.memoryId,r.revision,r.operationId,r.committedAt,r.pinned,[...r.refs].sort()]),
+ sorted(x.revisions,key).map(r=>[r.memoryId,r.revision,r.operationId,r.committedAt,r.pinned,[...r.refs].sort((a,b)=>a.localeCompare(b))]),
  sorted(x.assets,a=>a.id).map(a=>[a.id,a.memoryId,a.bytes]),
- sorted(x.intents,i=>i.operationId).map(i=>[i.memoryId,i.operationId,i.state,i.lastActivity,i.leaseUntil,i.inFlight,[...i.refs].sort()]),
+ sorted(x.intents,i=>i.operationId).map(i=>[i.memoryId,i.operationId,i.state,i.lastActivity,i.leaseUntil,i.inFlight,[...i.refs].sort((a,b)=>a.localeCompare(b))]),
  sorted(holds,h=>h.id).map(h=>[h.id,h.operationId,h.memoryId,h.kind])];
 }
 // selection = exact subset of candidate revision operation IDs. Never includes

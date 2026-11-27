@@ -10,7 +10,7 @@ async function open(){
  return new Promise((ok,no)=>{const r=indexedDB.open(DB,1);r.onupgradeneeded=()=>{for(const n of ["jobs","heads","cache"])r.result.createObjectStore(n,{keyPath:"id"});};r.onsuccess=()=>ok(r.result);r.onerror=()=>no(r.error);r.onblocked=()=>no(Error("Base bloqueada."));});
 }
 const same=(a,b)=>a===null||b===null?a===b:a.revision===b.revision&&a.operationId===b.operationId;
-const canonical=x=>Array.isArray(x)?x.map(canonical):x&&typeof x==='object'?Object.fromEntries(Object.keys(x).sort().map(k=>[k,canonical(x[k])])):x;
+const canonical=x=>Array.isArray(x)?x.map(canonical):x&&typeof x==='object'?Object.fromEntries(Object.keys(x).sort((a,b)=>a.localeCompare(b)).map(k=>[k,canonical(x[k])])):x;
 const baseOf=w=>w?{revision:w.header.revision,operationId:w.header.operationId}:null;
 export async function openIncrementalLabStore(scope){
  if(!uuid(scope?.userId)||!uuid(scope?.archiveId)||!hex(scope?.keyId))fail();

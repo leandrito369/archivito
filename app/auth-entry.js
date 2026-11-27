@@ -103,4 +103,4 @@ async function init(){
     await refresh();
   }catch{show("No se pudo iniciar el módulo de acceso. Revisá configuración y navegador.");}
 }
-init();
+void init();

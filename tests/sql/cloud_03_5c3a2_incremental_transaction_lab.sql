@@ -109,7 +109,7 @@ begin
  insert into archivito_inc_tx_lab.gates values(a,false,k,100000);
  insert into archivito_inc_tx_lab.members values(a,u),(a,v);
  perform archivito_inc_tx_lab.rejects(u,'begin',w1,'disabled');
- update archivito_inc_tx_lab.gates set enabled=true;
+ update archivito_inc_tx_lab.gates set enabled=true where archivito_inc_tx_lab.gates.a is not null;
  perform archivito_inc_tx_lab.rejects('10000000-0000-4000-8000-000000000009','begin',w1,'not member');
  perform archivito_inc_tx_lab.rejects(u,'begin',jsonb_set(w1,'{header,keyId}',to_jsonb(repeat('c',64))),'wrong key');
  perform archivito_inc_tx_lab.step(u,'begin',w1);
@@ -123,9 +123,9 @@ begin
  res:=archivito_inc_tx_lab.step(u,'commit',w1);
  if res->>'state'<>'synced' then raise exception 'r1 failed';end if;
  perform archivito_inc_tx_lab.rejects(v,'begin',jsonb_set(w2,'{header,refs,0,nonce}','"BBBBBBBBBBBBBBBB"'),'invalid inherited reference');
- update archivito_inc_tx_lab.gates set quota=before_bytes;
+ update archivito_inc_tx_lab.gates set quota=before_bytes where archivito_inc_tx_lab.gates.a is not null;
  perform archivito_inc_tx_lab.rejects(v,'begin',w2,'quota');
- update archivito_inc_tx_lab.gates set quota=100000;
+ update archivito_inc_tx_lab.gates set quota=100000 where archivito_inc_tx_lab.gates.a is not null;
  perform archivito_inc_tx_lab.step(v,'begin',w2);
  if (select reserved from archivito_inc_tx_lab.intents where op=op2)<>octet_length(w2::text) then raise exception 'metadata-only charged asset';end if;
  perform archivito_inc_tx_lab.step(u,'begin',w3);

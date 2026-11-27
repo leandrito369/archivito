@@ -76,3 +76,4 @@
    * `app/sync-incremental-lab-ui.mjs` y `app/sync-v3-metrics.mjs` (desconectados de `app/auth-entry.js` y excluidos de `scripts/build-pages.mjs`; su retiro definitivo se evaluará tras completar `D.4F`).
 3. **Suite SQL, Edge y actas históricas:**
    * Los 10 scripts SQL activos en `docs/sql/`, las 38 actas `docs/CLOUD_*.md` y los 10 workflows de CI permanecen íntegros.
+

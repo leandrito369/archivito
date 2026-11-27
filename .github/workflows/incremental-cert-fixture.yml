@@ -16,7 +16,7 @@ jobs:
       postgres:
         image: postgres:17
         env:
-          POSTGRES_PASSWORD: synthetic-fixture-only
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: fixture_lab
         options: >-
           --health-cmd "pg_isready -U postgres -d fixture_lab"

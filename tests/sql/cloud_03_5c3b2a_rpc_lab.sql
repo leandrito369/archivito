@@ -14,7 +14,7 @@ begin
  begin perform public.sync_inc_step(u,'begin',w1);raise exception 'gate bypass';exception when others then if sqlerrm<>'disabled' then raise;end if;end;
  perform set_config('role','none',true);
  alter table archivito_inc.gates drop constraint inc_gate_hard_closed;
- update archivito_inc.gates set enabled=true;
+ update archivito_inc.gates set enabled=true where archive_id=a;
  perform set_config('role','service_role',true);
  begin perform public.sync_inc_step('20000000-0000-4000-8000-000000000009','begin',w1);raise exception 'outsider bypass';exception when others then if sqlerrm<>'not member' then raise;end if;end;
  perform public.sync_inc_step(u,'begin',w1);
@@ -26,10 +26,10 @@ begin
  -- Seed a synthetic previous confirmed revision under administrator role only.
  -- NOT evidence of an actual Storage transfer or attestation.
  perform set_config('role','none',true);
- update archivito_inc.assets set state='ready';
- update archivito_inc.blocks set verified=true;
- update archivito_inc.operations set state='committed';
- update archivito_inc.manifests set committed_at=now();
+ update archivito_inc.assets set state='ready' where archive_id=a;
+ update archivito_inc.blocks set verified=true where archive_id=a;
+ update archivito_inc.operations set state='committed' where archive_id=a;
+ update archivito_inc.manifests set committed_at=now() where archive_id=a;
  insert into archivito_inc.heads values(a,m,o1,1);
  perform set_config('role','service_role',true);
  begin perform public.sync_inc_step(v,'begin',jsonb_set(w2,'{header,refs,0,nonce}','"BBBBBBBBBBBBBBBB"'));raise exception 'bad ref accepted';exception when others then if sqlerrm<>'invalid inherited reference' then raise;end if;end;

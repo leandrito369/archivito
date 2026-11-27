@@ -21,7 +21,7 @@ jobs:
         with:
           node-version: '22'
       - name: Instalar dependencias fijadas
-        run: npm ci --include=dev --no-audit --no-fund
+        run: npm ci --include=dev --ignore-scripts --no-audit --no-fund
       - name: Compilar y comprobar archivos públicos
         run: |
           npm run build:pages

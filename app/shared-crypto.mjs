@@ -18,7 +18,7 @@ export function toBase64Url(value) {
   const input = bytes(value);
   let s = "";
   for (let i=0;i<input.length;i+=16384) s += String.fromCharCode(...input.subarray(i,i+16384));
-  return btoa(s).replaceAll("+","-").replaceAll("/","_").replace(/=+$/,"");
+  return btoa(s).replaceAll("+","-").replaceAll("/","_").replaceAll("=","");
 }
 export function fromBase64Url(value, maxBytes=MAX_BYTES+16) {
   if (typeof value!=="string" || value.length>Math.ceil(maxBytes*4/3) ||

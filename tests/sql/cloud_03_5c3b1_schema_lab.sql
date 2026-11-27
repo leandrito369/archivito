@@ -8,7 +8,7 @@ begin
  select id into strict a from public.archives;
  select user_id into strict u from public.archive_members where archive_id=a and role='owner';
  insert into archivito_inc.gates(archive_id) values(a);
- begin update archivito_inc.gates set enabled=true;raise exception 'gate opened';exception when check_violation then null;end;
+ begin update archivito_inc.gates set enabled=true where archive_id=a;raise exception 'gate opened';exception when check_violation then null;end;
  insert into archivito_inc.operations(archive_id,operation_id,memory_id,actor,key_id,revision,base_revision,base_operation_id,digest,state,receipt_bytes)
  values(a,o1,m,u,k,1,0,null,d,'committed',100),(a,o2,m,u,k,2,1,o1,d,'committed',100),(a,o3,m2,u,k,1,0,null,d,'staging',100);
  insert into archivito_inc.manifests(archive_id,memory_id,operation_id,revision,encrypted_header,charged_bytes) values(a,m,o1,1,'{}',100),(a,m,o2,2,'{}',100),(a,m2,o3,1,'{}',100);

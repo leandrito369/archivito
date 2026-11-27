@@ -20,7 +20,7 @@ jobs:
       postgres:
         image: postgres:17
         env:
-          POSTGRES_PASSWORD: disposable
+          POSTGRES_HOST_AUTH_METHOD: trust
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s
@@ -30,7 +30,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - uses: denoland/setup-deno@v2
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:
           deno-version: v2.5.6
       - name: Cache pinned SDK and check actual entrypoint
