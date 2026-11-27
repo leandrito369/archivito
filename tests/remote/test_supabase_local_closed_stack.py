@@ -19,6 +19,7 @@ import tempfile
 import time
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 import uuid
 
 ROOT=Path(__file__).resolve().parents[2]
@@ -196,21 +197,69 @@ class Lab:
     def edge(self,token,action="manifest",body=None,extra=None,method=None):
         return self.request("/functions/v1/"+FUNCTION+"?action="+action,self.anon,token,
            body,method,{"Origin":ORIGIN,**(extra or {})})
-    def internal_edge(self):
-        # Only the Docker network shared by this lab's Kong and runtime.
-        names=["supabase_kong_"+self.project,"supabase_edge_runtime_"+self.project]
+    def functions_route(self,config):
+        matches=[]
+        for service in config["services"]:
+            for route in service.get("routes",[]) or []:
+                if any(p in ("/functions/v1/","/functions/v1") for p in (route.get("paths") or [])):
+                    matches.append((service,route))
+        require(len(matches)==1,"ambiguous functions route")
+        service,route=matches[0]
+        require(len(service.get("routes") or [])==1,"shared functions service; refuse mutation")
+        return service,route
+    def internal_edge(self,config):
+        # Derive the upstream from the generated config, never guess a port.
+        service,route=self.functions_route(config)
+        if service.get("url"):
+            target=urlsplit(service["url"])
+            require(target.scheme=="http" and not target.username and not target.password
+                    and not target.query and not target.fragment,"unexpected functions upstream URL")
+            host,port,path=target.hostname,target.port or 80,target.path
+        else:
+            require(service.get("protocol","http")=="http","unexpected functions protocol")
+            host,port,path=service.get("host"),service.get("port",80),service.get("path") or ""
+        require(isinstance(host,str) and re.fullmatch(r"[a-zA-Z0-9_.-]+",host) is not None,
+                "invalid upstream host")
+        require(type(port) is int and 1<=port<=65535,"invalid upstream port")
+        require(path in ("","/") and route.get("strip_path",True) is True,
+                "unexpected functions upstream path mapping")
+        kong="supabase_kong_"+self.project
+        edge="supabase_edge_runtime_"+self.project
         nets=[]
-        for name in names:
+        for name in (kong,edge):
             r=self.docker("inspect","--format","{{json .NetworkSettings.Networks}}",name)
             nets.append(json.loads(r.stdout))
         common=set(nets[0]) & set(nets[1])
         require(len(common)==1,"ambiguous isolated Docker network")
         network=next(iter(common))
         require(network.endswith(self.project),"unexpected Docker network")
-        addr=ipaddress.ip_address(nets[1][network]["IPAddress"])
+        endpoint=nets[1][network]
+        addr=ipaddress.ip_address(endpoint["IPAddress"])
         require(addr.version==4 and any(addr in ipaddress.ip_network(n) for n in ("10.0.0.0/8","172.16.0.0/12","192.168.0.0/16")),"nonprivate Edge address")
+        aliases=set(endpoint.get("Aliases") or []) | set(endpoint.get("DNSNames") or []) | {edge,str(addr)}
+        # Match the real upstream to this precise container, not an arbitrary DNS target.
+        require(host.lower() in {a.lower() for a in aliases},"Kong upstream is not isolated Edge")
+        # Only inspect socket metadata; no environment, credentials or process arguments.
+        listeners=[]
+        for table in ("/proc/net/tcp","/proc/net/tcp6"):
+            r=self.docker("exec",edge,"cat",table,allow_fail=True)
+            if r.returncode:continue
+            for line in r.stdout.splitlines()[1:]:
+                fields=line.split()
+                if len(fields)<4 or fields[3]!="0A":continue
+                local,sep,hexport=fields[1].partition(":")
+                if not sep or not re.fullmatch(r"[0-9A-Fa-f]{4}",hexport):continue
+                if not re.fullmatch(r"[0-9A-Fa-f]{8}|[0-9A-Fa-f]{32}",local):continue
+                binding="all" if set(local)=={"0"} else ("loopback" if local in ("0100007F","00000000000000000000000001000000") else "specific")
+                listeners.append({"port":int(hexport,16),"binding":binding,"family":4 if table.endswith("tcp") else 6})
+        print("EDGE_UPSTREAM "+json.dumps({"port":port,"host_matches_alias":True,
+              "host_is_ip":host==str(addr),"alias_count":len(aliases),
+              "strip_path":True,"listeners":listeners,
+              "port_matches_listener":any(x["port"]==port for x in listeners),
+              "previous_probe_port":9000,"port_changed":port!=9000}),flush=True)
         self.probe_network=network
-        self.edge_internal="http://"+str(addr)+":9000"
+        self.edge_internal="http://"+host+":"+str(port)
+        self.edge_resolve=host+":"+str(port)+":"+str(addr) if host!=str(addr) else None
     def direct_edge(self,method="GET",origin=ORIGIN,extra=None):
         # Isolated helper: no host namespace, mounts, credentials or ports.
         require(method in ("GET","OPTIONS"),"unexpected direct probe method")
@@ -233,6 +282,7 @@ class Lab:
               "--include","--http1.1","--noproxy","*","--connect-timeout","10","--max-time","30",
               "--max-filesize","1048576","--request",method]
         for key,value in headers.items():args+=["--header",key+": "+value]
+        if self.edge_resolve:args+=["--resolve",self.edge_resolve]
         args+=["--url",self.edge_internal+"/"+FUNCTION+"?action=manifest"]
         try:
             r=self.docker(*args,timeout=45,allow_fail=True)
@@ -259,21 +309,15 @@ class Lab:
         require(isinstance(config,dict) and isinstance(config.get("services"),list),"unexpected Kong config")
         return config
     def cors_route(self,config):
-        matches=[]
-        for service in config["services"]:
-            for route in service.get("routes",[]) or []:
-                if "/functions/v1/" in (route.get("paths") or []) or "/functions/v1" in (route.get("paths") or []):
-                    matches.append((service,route))
-        require(len(matches)==1,"ambiguous functions route")
-        service,route=matches[0]
-        require(len(service.get("routes") or [])==1,"shared functions service; refuse mutation")
+        service,route=self.functions_route(config)
         require(not any(p.get("name")=="cors" for p in config.get("plugins",[]) or []),
                 "top-level CORS plugin requires separate investigation")
         scopes=[(scope,scope.get("plugins") or []) for scope in (service,route)]
         found=[(scope,p) for scope,plugins in scopes for p in plugins if p.get("name")=="cors"]
         return found
     def cors_isolation(self):
-        self.internal_edge()
+        config=self.kong_config()
+        self.internal_edge(config)
         gateway=self.edge(self.anon,method="GET")
         direct=self.direct_edge()
         for layer,(status,h,d) in (("runtime",direct),("kong",gateway)):
@@ -282,7 +326,6 @@ class Lab:
                   "wildcard":("*" in (h.get_all("Access-Control-Allow-Origin") or [])),
                   "cache_exact":h.get_all("Cache-Control")==["no-store"]}),flush=True)
         self.check_edge("direct Edge method rejection",*direct,405)
-        config=self.kong_config()
         found=self.cors_route(config)
         for _,p in found:
             origins=(p.get("config") or {}).get("origins") or []
