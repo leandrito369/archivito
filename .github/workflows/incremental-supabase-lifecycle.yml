@@ -1,0 +1,43 @@
+name: Supabase local — closed lifecycle E4
+on:
+  pull_request:
+    paths:
+      - 'tests/remote/test_supabase_local_closed_stack.py'
+      - 'tests/remote/test_supabase_local_closed_lifecycle.py'
+      - 'docs/sql/cloud_03_5c3b*.sql'
+      - 'supabase/functions/archivito-sync-incremental/**'
+      - 'server/sync-incremental*.mjs'
+      - 'app/sync-incremental*.mjs'
+      - 'app/shared-crypto.mjs'
+      - 'app/sync-v3-contract.mjs'
+      - '.github/workflows/incremental-supabase-local.yml'
+      - '.github/workflows/incremental-supabase-lifecycle.yml'
+permissions:
+  contents: read
+jobs:
+  supabase-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ARCHIVITO_DISPOSABLE_LAB: supabase-e4
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13 # v3
+        with:
+          version: 2.122.0
+      - name: Verify CLI, Docker and Python
+        run: |
+          supabase --version
+          docker version --format '{{.Server.Version}}'
+          python3 -m venv "$RUNNER_TEMP/archivito-e3-venv"
+          "$RUNNER_TEMP/archivito-e3-venv/bin/python" -m pip install --disable-pip-version-check PyYAML==6.0.3
+          "$RUNNER_TEMP/archivito-e3-venv/bin/python" -m py_compile tests/remote/test_supabase_local_closed_stack.py tests/remote/test_supabase_local_closed_lifecycle.py
+      - name: Validate synthetic wire against actual JS contract
+        run: |
+          set -o pipefail
+          PYTHONPATH=tests/remote "$RUNNER_TEMP/archivito-e3-venv/bin/python" -c 'import json; from test_supabase_local_closed_lifecycle import wire; print(json.dumps(wire()))' | node --input-type=module -e 'import {readFileSync} from "node:fs"; import {validateIncrementalWire} from "./app/sync-incremental-wire.mjs"; validateIncrementalWire(JSON.parse(readFileSync(0,"utf8"))); console.log("PASS E4 synthetic wire structurally valid");'
+      - name: Run E4 local lifecycle without hosted credentials
+        run: |
+          "$RUNNER_TEMP/archivito-e3-venv/bin/python" tests/remote/test_supabase_local_closed_lifecycle.py
