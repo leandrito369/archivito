@@ -92,7 +92,8 @@
   </main>
   <script src="./perspective.js"></script>
   <script src="./archive-v3.js"></script>
-<script src="./local-generation.js"></script>
+  <script src="./local-generation.js"></script>
+  <script src="./image-mobile.js"></script>
   <script src="./capture-existing.js"></script>
   <script>
     "use strict";
@@ -164,26 +165,25 @@
       $("#rec-title").disabled = !!existingTarget;
       $("#process").disabled = $("#reset").disabled = $("#export").disabled = $("#save-archive").disabled = true;
       result.style.display = "none"; $("#empty-result").hidden = false;
-      if (!["image/jpeg", "image/png", "image/webp", "image/gif"].includes(file.type) ||
-          file.size > 35 * 1024 * 1024 || file.size===0) {
-        setStatus("Formato no admitido o fotografía mayor que 35 MB.", true); return;
-      }
-      let bitmap;
       try {
-        bitmap=await createImageBitmap(file);
-        const scale=Math.min(1,2400/Math.max(bitmap.width,bitmap.height));
-        photo.width=Math.max(2,Math.round(bitmap.width*scale));
-        photo.height=Math.max(2,Math.round(bitmap.height*scale));
-        photo.getContext("2d",{willReadFrequently:true}).drawImage(bitmap,0,0,photo.width,photo.height);
-        bitmap.close();bitmap=null;
-        original=file;
-        $("#initial").hidden=true;area.hidden=false;area.classList.add("active");
-        $("#reset").disabled=false;
-        points=defaults();setPoints();
-        setStatus("Fotografía cargada. Ajustá los cuatro puntos y pulsá «Enderezar carta».");
-      }catch(error){
-        if(bitmap&&typeof bitmap.close==="function")bitmap.close();
-        setStatus("No se pudo abrir la fotografía: "+error.message,true);
+        const inspected = await ArchivitoImageMobile.inspectImageBlob(file);
+        const drawn = await ArchivitoImageMobile.drawOrientedCanvas(
+          inspected.blob,
+          2400,
+          photo,
+          { willReadFrequently: true }
+        );
+        original = inspected.blob;
+        $("#initial").hidden = true; area.hidden = false; area.classList.add("active");
+        $("#reset").disabled = false;
+        points = defaults(); setPoints();
+        setStatus(
+          drawn.orientation > 1
+            ? "Fotografía cargada (orientación EXIF aplicada en vista previa; el original permanece intacto). Ajustá los cuatro puntos y pulsá «Enderezar carta»."
+            : "Fotografía cargada. Ajustá los cuatro puntos y pulsá «Enderezar carta»."
+        );
+      } catch (error) {
+        setStatus("No se pudo abrir la fotografía: " + error.message, true);
       }
     }
     $("#file").addEventListener("change", async event=>{

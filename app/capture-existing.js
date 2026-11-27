@@ -18,6 +18,12 @@
     ["image/jpeg","image/png","image/webp","image/gif"].includes(blob.type) &&
     blob.size>0 && blob.size<=35*1024*1024;
   const checkSource = blob => {
+    if (typeof root.ArchivitoImageMobile === "object" &&
+        typeof root.ArchivitoImageMobile.quickValidateFile === "function") {
+      if (!(blob instanceof Blob)) throw new Error("La fotografía original no tiene un formato admitido.");
+      root.ArchivitoImageMobile.quickValidateFile(blob);
+      return;
+    }
     if (!supported(blob)) throw new Error("La fotografía original no tiene un formato admitido.");
   };
   const cropMeta = (points, photo, canvas) => {
