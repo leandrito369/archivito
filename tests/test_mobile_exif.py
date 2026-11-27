@@ -128,9 +128,19 @@ class MobileExifAndFormatTests(unittest.TestCase):
             exif6_jpeg = inject_exif_orientation(base_jpeg, 6)
             exif3_jpeg = inject_exif_orientation(base_jpeg, 3)
 
-            # 1. HEIC/HEIF rechazado con mensaje claro en biblioteca (sin guardar nada).
+            # 1a. HEIC disfrazado de .jpg debe mostrar el error inline dentro del modal abierto.
             page.locator("#add-record").click()
             page.locator("#rec-title").fill("Prueba HEIC rechazada")
+            page.locator('#page-entries input[type="file"]').nth(0).set_input_files({
+                "name": "heic-disfrazada.jpg",
+                "mimeType": "image/jpeg",
+                "buffer": SYNTHETIC_HEIC,
+            })
+            expect(page.locator("#page-entries .filename").nth(0)).to_contain_text(
+                "HEIC/HEIF", timeout=10000
+            )
+
+            # 1b. HEIC/HEIF explícito rechazado de inmediato con alerta y mensaje claro.
             page.locator('#page-entries input[type="file"]').nth(0).set_input_files({
                 "name": "IMG_1001.HEIC",
                 "mimeType": "image/heic",
@@ -138,6 +148,7 @@ class MobileExifAndFormatTests(unittest.TestCase):
             })
             self.assertTrue(any("HEIC/HEIF" in m and "JPEG, PNG o WebP" in m for m in dialogs))
             expect(page.locator("#message")).to_contain_text("HEIC/HEIF")
+            expect(page.locator("#page-entries .filename").nth(0)).to_contain_text("HEIC/HEIF")
 
             # 2. Subir JPEG EXIF-6 con MIME vacío (típico selector móvil): se acepta por magic bytes,
             #    conserva bytes originales bit a bit y genera miniatura vertical (arriba ROJO, abajo AZUL).
@@ -248,3 +259,4 @@ class MobileExifAndFormatTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

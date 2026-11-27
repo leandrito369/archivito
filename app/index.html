@@ -108,10 +108,11 @@ function buildPageEntries(){
       preview.style.cssText='width:100%;max-height:170px;object-fit:contain;border-radius:6px;margin:7px auto;pointer-events:none';
       const inp=document.createElement('input');inp.type='file';
       inp.accept='image/jpeg,image/png,image/webp,image/gif';inp.dataset.side=side;
-      function showSaved(){
+      function showSaved(errorMessage=''){
         const blob=p[side];
         small.textContent=blob?'Original del '+label.toLowerCase()+' guardado · podés reemplazarlo':'Sin imagen de '+label.toLowerCase()+' · elegí una fotografía';
-        filename.textContent=blob?'Foto guardada ('+Math.round(blob.size/1024)+' KB)'+(p[side+'Derived']?' · Digitalización vinculada':''):'Sin fotografía guardada';
+        filename.style.color=errorMessage?'var(--error)':'';
+        filename.textContent=errorMessage||(blob?'Foto guardada ('+Math.round(blob.size/1024)+' KB)'+(p[side+'Derived']?' · Digitalización vinculada':''):'Sin fotografía guardada');
         if(blob instanceof Blob){
           const url=objectUrl(blob);editorUrls.push(url);preview.src=url;preview.hidden=false;preview.style.display='block';
         }else{preview.removeAttribute('src');preview.hidden=true;preview.style.display='none';}
@@ -126,9 +127,9 @@ function buildPageEntries(){
           void ArchivitoImageMobile.inspectImageBlob(f).then(info=>{
             if(p[side]===f)p[side]=info.blob;
           },err=>{
-            if(p[side]===f){p[side]=null;inp.value='';showSaved();tell(err.message,true);}
+            if(p[side]===f){p[side]=null;inp.value='';showSaved(err.message);tell(err.message,true);}
           });
-        }catch(err){inp.value='';tell(err.message,true);alert(err.message);}
+        }catch(err){inp.value='';showSaved(err.message);tell(err.message,true);alert(err.message);}
       });
       wrapper.append(small,preview,inp,filename);showSaved();grid.append(wrapper);
     });
