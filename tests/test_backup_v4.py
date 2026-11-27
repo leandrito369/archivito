@@ -118,6 +118,8 @@ class BackupEncryptedTests(unittest.TestCase):
             self.assertGreater(len(data["ciphertext"]),40)
             expect(page.locator("#export-password")).to_have_value("")
             expect(page.locator("#export-confirm")).to_have_value("")
+            expect(page.locator("#diag-last-export")).to_contain_text("hace 0 días")
+            expect(page.locator("#diag-collection")).to_contain_text("1 recuerdos · 2 hojas")
 
             # Perfil limpio: contraseña errónea no debe añadir nada.
             second=restored.new_page()
@@ -239,6 +241,108 @@ class BackupEncryptedTests(unittest.TestCase):
             self.assertEqual(redigitized[0]["pages"][0]["front"],before[0]["pages"][0]["front"])
             self.assertEqual(redigitized[0]["pages"][0]["back"],before[0]["pages"][0]["back"])
             self.assertIsNotNone(redigitized[0]["pages"][0]["frontDerived"])
+
+            # 0.4A.2: generar un segundo respaldo con 1 recuerdo en conflicto y 1 recuerdo nuevo.
+            page.goto(self.base)
+            page.wait_for_function("typeof db!=='undefined' && db!==null")
+            expect(page.locator("#storage-summary")).to_contain_text("Último v4:")
+            page.locator("#add-record").click()
+            page.locator("#rec-title").fill("Segunda carta FICTICIA nueva")
+            page.locator("#rec-note").fill("Recuerdo adicional para probar conflictos.")
+            self.upload(page,0,PHOTO_2)
+            page.locator("#editor-save").click()
+            expect(page.locator("#stat-count")).to_have_text("2")
+            page.goto(self.base+"respaldo-v4.html")
+            page.locator("#export-password").fill(PASSPHRASE)
+            page.locator("#export-confirm").fill(PASSPHRASE)
+            with page.expect_download(timeout=60000) as received_two:
+                page.locator("#export-button").click()
+            backup_two=Path(received_two.value.path()).read_bytes()
+
+            # Vista previa sin escrituras: debe informar 1 nuevo y 1 conflicto por ID.
+            second.goto(self.base+"respaldo-v4.html")
+            second.locator("#backup-file").set_input_files({
+                "name":"dos-recuerdos.archivito","mimeType":"application/json",
+                "buffer":backup_two
+            })
+            second.locator("#import-password").fill(PASSPHRASE)
+            second.locator("#preview-button").click()
+            expect(second.locator("#import-preview")).to_be_visible(timeout=60000)
+            expect(second.locator("#preview-summary")).to_contain_text(
+                "Nuevos: 1 · Conflictos por ID: 1")
+            expect(second.locator("#preview-conflicts")).to_contain_text(
+                "Carta privada FICTICIA para cifrar")
+            second.goto(self.base)
+            second.wait_for_function("typeof db!=='undefined' && db!==null")
+            self.assertEqual(sha_snapshot(second),redigitized)
+
+            # Política skip: importa sólo el recuerdo nuevo y preserva el local editado.
+            second.goto(self.base+"respaldo-v4.html")
+            second.locator("#backup-file").set_input_files({
+                "name":"dos-recuerdos.archivito","mimeType":"application/json",
+                "buffer":backup_two
+            })
+            second.locator("#import-password").fill(PASSPHRASE)
+            second.locator("#conflict-policy").select_option("skip")
+            second.locator("#import-button").click()
+            expect(second.locator("#status")).to_contain_text(
+                "Restauración v4 exitosa: 1 recuerdos nuevos (1 omitidos)",timeout=60000)
+            second.goto(self.base)
+            second.wait_for_function("typeof db!=='undefined' && db!==null")
+            after_skip=sha_snapshot(second)
+            self.assertEqual(len(after_skip),2)
+            by_id={r["id"]:r for r in after_skip}
+            orig_id=before[0]["id"]
+            self.assertEqual(by_id[orig_id]["note"],"Nota actualizada tras restauración v4.")
+            self.assertEqual(by_id[orig_id]["syncGeneration"],gen_redigitized)
+            new_rec=[r for r in after_skip if r["id"]!=orig_id][0]
+            self.assertEqual(new_rec["title"],"Segunda carta FICTICIA nueva")
+            self.assertEqual(new_rec["pages"][0]["front"],
+                             hashlib.sha256(PHOTO_2).hexdigest())
+
+            # Política duplicate: conserva original intacto y crea copia con nuevo ID y originales iguales.
+            second.goto(self.base+"respaldo-v4.html")
+            second.locator("#backup-file").set_input_files({
+                "name":"copia-conflicto.archivito","mimeType":"application/json",
+                "buffer":backup
+            })
+            second.locator("#import-password").fill(PASSPHRASE)
+            second.locator("#conflict-policy").select_option("duplicate")
+            second.locator("#import-button").click()
+            expect(second.locator("#status")).to_contain_text(
+                "Restauración v4 exitosa: 0 recuerdos nuevos (1 copias nuevas)",timeout=60000)
+            second.goto(self.base)
+            second.wait_for_function("typeof db!=='undefined' && db!==null")
+            after_dup=sha_snapshot(second)
+            self.assertEqual(len(after_dup),3)
+            dup_by_id={r["id"]:r for r in after_dup}
+            self.assertEqual(dup_by_id[orig_id]["note"],"Nota actualizada tras restauración v4.")
+            self.assertEqual(dup_by_id[orig_id]["syncGeneration"],gen_redigitized)
+            copies=[r for r in after_dup if r["title"].endswith("(copia)")]
+            self.assertEqual(len(copies),1)
+            self.assertNotEqual(copies[0]["id"],orig_id)
+            self.assertRegex(copies[0]["syncGeneration"],r"^[0-9a-f-]{36}$")
+            self.assertEqual(copies[0]["pages"],before[0]["pages"])
+
+            # Política replace: reemplaza explícitamente el existente y avanza syncGeneration.
+            second.goto(self.base+"respaldo-v4.html")
+            second.locator("#backup-file").set_input_files({
+                "name":"reemplazo-conflicto.archivito","mimeType":"application/json",
+                "buffer":backup
+            })
+            second.locator("#import-password").fill(PASSPHRASE)
+            second.locator("#conflict-policy").select_option("replace")
+            second.locator("#import-button").click()
+            expect(second.locator("#status")).to_contain_text(
+                "Restauración v4 exitosa: 0 recuerdos nuevos (1 reemplazados)",timeout=60000)
+            second.goto(self.base)
+            second.wait_for_function("typeof db!=='undefined' && db!==null")
+            after_replace=sha_snapshot(second)
+            self.assertEqual(len(after_replace),3)
+            rep_orig={r["id"]:r for r in after_replace}[orig_id]
+            self.assertEqual(rep_orig["note"],"Una nota sólo para pruebas, no pública.")
+            self.assertRegex(rep_orig["syncGeneration"],r"^[0-9a-f-]{36}$")
+            self.assertNotEqual(rep_orig["syncGeneration"],gen_redigitized)
         finally:
             original.close()
             restored.close()

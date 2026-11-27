@@ -13,14 +13,14 @@ const appOut = join(destination, "app");
 // Lista explícita: ningún archivo inesperado ni herramienta de laboratorio dentro de app/ se publica.
 const publicFiles = [
   "index.html", "digitalizar.html", "visor-3d.html",
-  "archive-v3.js", "local-generation.js", "capture-existing.js", "paper-math.js",
+  "archive-v3.js", "local-generation.js", "backup-plan.js", "capture-existing.js", "paper-math.js",
   "perspective.js", "visor-3d-data.js", "acceso.html", "auth-return.js",
   "respaldo-v4.html", "crypto-v4.js", "backup-v4.js"
 ];
-const mandatory = [
+const mandatory = new Set([
   "index.html", "digitalizar.html", "visor-3d.html", "acceso.html", "auth-return.js",
-  "local-generation.js", "respaldo-v4.html", "crypto-v4.js", "backup-v4.js"
-];
+  "local-generation.js", "backup-plan.js", "respaldo-v4.html", "crypto-v4.js", "backup-v4.js"
+]);
 async function exists(path) { try { return (await stat(path)).isFile(); } catch { return false; } }
 
 async function main() {
@@ -29,7 +29,7 @@ async function main() {
   for (const name of publicFiles) {
     const input = join(src, name);
     if (!(await exists(input))) {
-      if (mandatory.includes(name)) throw Error("Archivo obligatorio faltante: " + name);
+      if (mandatory.has(name)) throw new Error("Archivo obligatorio faltante: " + name);
       continue;
     }
     if (![".html", ".js"].includes(extname(name))) throw Error("Extensión no permitida: " + name);
