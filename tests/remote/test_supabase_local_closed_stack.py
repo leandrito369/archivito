@@ -23,6 +23,8 @@ import uuid
 
 ROOT=Path(__file__).resolve().parents[2]
 CLI="2.122.0"
+# Published Docker Hub multi-platform index, curlimages/curl:8.21.0.
+PROBE_IMAGE="docker.io/curlimages/curl@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13"
 API="http://127.0.0.1:54321"
 FUNCTION="archivito-sync-incremental"
 ORIGIN="http://localhost:8000"
@@ -56,6 +58,8 @@ class Lab:
         self.env.update(HOME=str(work/"home"),CI="true",SUPABASE_TELEMETRY_DISABLED="true")
         (work/"home").mkdir()
         self.started=False
+        self.probe_container=self.project+"-cors-probe"
+        self.probe_image_ready=False
     def cmd(self,args,stdin=None,timeout=90,allow_fail=False):
         # Never print subprocess output (CLI status/start may contain keys).
         r=subprocess.run(args,cwd=self.work,env=self.env,input=stdin,text=True,
@@ -205,31 +209,36 @@ class Lab:
         require(network.endswith(self.project),"unexpected Docker network")
         addr=ipaddress.ip_address(nets[1][network]["IPAddress"])
         require(addr.version==4 and any(addr in ipaddress.ip_network(n) for n in ("10.0.0.0/8","172.16.0.0/12","192.168.0.0/16")),"nonprivate Edge address")
+        self.probe_network=network
         self.edge_internal="http://"+str(addr)+":9000"
     def direct_edge(self,method="GET",origin=ORIGIN,extra=None):
-        # Runner-to-bridge traffic failed in lab #7 and Kong lacks curl in #8.
-        # Enter only Kong's network namespace, bypassing the HTTP gateway.
-        # No JWT/key needed for the pre-auth GET/OPTIONS and origin cases.
+        # Isolated helper: no host namespace, mounts, credentials or ports.
         require(method in ("GET","OPTIONS"),"unexpected direct probe method")
         require(origin in (ORIGIN,"https://unauthorized.example"),"unexpected direct probe origin")
         headers={"Origin":origin,**(extra or {})}
         require(set(headers)<= {"Origin","Access-Control-Request-Method","Access-Control-Request-Headers"},"unexpected direct headers")
-        kong="supabase_kong_"+self.project
-        # Kong 2.8.1 does not contain curl (run #8). Use the existing
-        # runner curl in only the disposable Kong network namespace.
-        # No new image, exposed port, container install or gateway changes.
-        pid=self.docker("inspect","--format","{{.State.Pid}}",kong).stdout.strip()
-        require(re.fullmatch(r"[1-9][0-9]{0,8}",pid) is not None and int(pid)>1,"invalid Kong PID")
-        require(Path("/proc/"+pid+"/ns/net").exists(),"Kong network namespace missing")
-        require(all(Path(p).is_file() for p in ("/usr/bin/sudo","/usr/bin/nsenter","/usr/bin/curl")),"runner probe tools unavailable")
-        args=["/usr/bin/sudo","-n","/usr/bin/nsenter","--net=/proc/"+pid+"/ns/net","--",
-              "/usr/bin/curl","--disable","--silent","--show-error","--include","--http1.1",
-              "--noproxy","*","--connect-timeout","10","--max-time","30",
+        if not self.probe_image_ready:
+            r=self.docker("pull",PROBE_IMAGE,timeout=180,allow_fail=True)
+            require(r.returncode==0,"pinned diagnostic image pull failed")
+            info=self.docker("image","inspect","--format","{{json .RepoDigests}}",PROBE_IMAGE)
+            require(any(x.endswith("@"+PROBE_IMAGE.split("@")[1]) for x in json.loads(info.stdout)),
+                    "diagnostic image digest mismatch")
+            self.probe_image_ready=True
+            passed("diagnostic image pinned by immutable digest")
+        require(not self.docker("ps","-a","--filter","name="+self.probe_container,"--format","{{.Names}}").stdout.strip(),"diagnostic container already exists")
+        args=["run","--rm","--pull=never","--name",self.probe_container,
+              "--network",self.probe_network,"--cap-drop=ALL","--security-opt=no-new-privileges",
+              "--read-only","--user","65534:65534","--pids-limit","32","--memory","64m",
+              "--entrypoint","curl",PROBE_IMAGE,"--disable","--silent","--show-error",
+              "--include","--http1.1","--noproxy","*","--connect-timeout","10","--max-time","30",
               "--max-filesize","1048576","--request",method]
         for key,value in headers.items():args+=["--header",key+": "+value]
         args+=["--url",self.edge_internal+"/"+FUNCTION+"?action=manifest"]
-        r=self.cmd(args,timeout=40,allow_fail=True)
-        print("EDGE_TRANSPORT "+json.dumps({"transport":"runner-curl-in-kong-netns","method":method,
+        try:
+            r=self.docker(*args,timeout=45,allow_fail=True)
+        finally:
+            self.remove_probe()
+        print("EDGE_TRANSPORT "+json.dumps({"transport":"isolated-docker-helper","method":method,
             "curl_exit":r.returncode,"connected":r.returncode==0}),flush=True)
         require(r.returncode==0,"direct runtime transport failed")
         require(len(r.stdout)<=1048576,"oversized direct response")
@@ -519,13 +528,24 @@ class Lab:
         require(status==200 and d==[],"real Storage list not empty")
         passed("real private Storage list empty")
         self.audit(0)
+    def remove_probe(self):
+        # Exact name only, unique to this run. Remove even after timeout.
+        existing=self.docker("ps","-a","--filter","name="+self.probe_container,"--format","{{.Names}}").stdout.splitlines()
+        require(all(n==self.probe_container for n in existing),"unexpected diagnostic container name")
+        if existing:self.docker("rm","-f",self.probe_container)
+        require(not self.docker("ps","-a","--filter","name="+self.probe_container,"--format","{{.Names}}").stdout.strip(),"diagnostic container cleanup failed")
     def stop(self):
         if self.started:
-            # Only the unique directory/project created by this process.
-            r=self.cmd(["supabase","stop","--no-backup"],timeout=180,allow_fail=True)
-            require(r.returncode==0,"disposable local stack cleanup failed")
-            require(not self.docker("ps","-a","--filter","name="+self.project,"--format","{{.Names}}").stdout.strip(),"local containers remain")
-            passed("disposable stack removed")
+            try:
+                self.remove_probe()
+            finally:
+                self.stop_stack()
+    def stop_stack(self):
+        # Only the unique directory/project created by this process.
+        r=self.cmd(["supabase","stop","--no-backup"],timeout=180,allow_fail=True)
+        require(r.returncode==0,"disposable local stack cleanup failed")
+        require(not self.docker("ps","-a","--filter","name="+self.project,"--format","{{.Names}}").stdout.strip(),"local containers remain")
+        passed("disposable stack removed")
 def main():
     require(os.environ.get("GITHUB_ACTIONS")=="true" and os.environ.get("ARCHIVITO_DISPOSABLE_LAB")=="supabase-e3","CI disposable runner only")
     with tempfile.TemporaryDirectory(prefix="archivito-e3-") as d:
