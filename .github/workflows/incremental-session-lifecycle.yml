@@ -1,0 +1,21 @@
+name: Session lifecycle — offline certification
+on:
+  pull_request:
+    paths:
+      - 'tests/remote/probe_incremental_session_lifecycle.py'
+      - 'tests/remote/test_incremental_session_lifecycle.py'
+      - 'tests/remote/probe_incremental_authenticated_closed.py'
+      - 'tests/remote/probe_incremental_fixture_login.py'
+      - '.github/workflows/incremental-session-lifecycle.yml'
+permissions:
+  contents: read
+jobs:
+  session-lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Test with mocked Auth and Edge (no credentials or remote requests)
+        run: python3 -m unittest discover -s tests/remote -p test_incremental_session_lifecycle.py -v

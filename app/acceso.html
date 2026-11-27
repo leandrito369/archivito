@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer"><meta name="robots" content="noindex,nofollow">
+<title>Archivito · Acceso compartido</title>
+<style>
+*{box-sizing:border-box}body{min-height:100vh;margin:0;display:grid;place-items:center;background:#191410;color:#f4e8d6;font-family:system-ui,sans-serif;padding:20px}main{width:min(100%,440px);padding:32px;background:#27201a;border:1px solid #5f4c3c;border-radius:18px}h1{font:36px Georgia,serif;margin:12px 0}p{line-height:1.65;color:#cbbba7}small{color:#cbbba7;display:block;line-height:1.6}button,a{font:inherit}button{width:100%;margin:8px 0;padding:12px;border:1px solid #997c59;border-radius:10px;color:#f4e8d6;background:#49392a;cursor:pointer}button:disabled{opacity:.5;cursor:wait}button:focus-visible,a:focus-visible{outline:2px solid #f1c991;outline-offset:4px}a{color:#f0c995}#status{border:1px solid #6a5743;padding:12px;border-radius:10px;min-height:48px;overflow-wrap:anywhere}[hidden]{display:none!important}
+</style></head>
+<body><main><small>ARCHIVITO · ARCHIVO COMPARTIDO</small><h1>Nuestros recuerdos</h1>
+<p>Ingresá con tu cuenta Google para comprobar tu acceso al archivo privado.</p>
+<p id="status" role="status" aria-live="polite">Preparando el inicio de sesión…</p>
+<button id="login" disabled>Continuar con Google</button>
+<button id="logout" hidden>Cerrar sesión en este navegador</button>
+<button id="retry" hidden>Comprobar acceso nuevamente</button>
+<section id="key-panel" hidden style="border-top:1px solid #5f4c3c;margin-top:16px;padding-top:12px">
+<h2 style="font:24px Georgia,serif">Clave del archivo</h2>
+<p id="key-status" role="status" aria-live="polite"></p>
+<button id="key-generate" hidden>Generar código de configuración de prueba</button>
+<label for="key-code">Código privado</label>
+<input id="key-code" type="password" autocomplete="off" spellcheck="false" autocapitalize="none" maxlength="63" style="width:100%;padding:10px;background:#191410;color:#f4e8d6;border:1px solid #997c59;border-radius:8px">
+<label><input id="key-show" type="checkbox"> Mostrar código</label>
+<button id="key-unlock" hidden>Desbloquear clave</button>
+<button id="key-lock">Bloquear y limpiar</button>
+<p id="key-fingerprint" style="overflow-wrap:anywhere;font-family:monospace"></p>
+<small>Durante esta etapa usá sólo una clave de prueba. La huella SHA-256 no es el código secreto. No publiques ni compartas el código por chat; guardalo fuera de Archivito. No hay carga de recuerdos.</small>
+</section>
+<section id="fixture-panel" hidden style="border-top:1px solid #5f4c3c;margin-top:16px;padding-top:12px">
+<h2 style="font:24px Georgia,serif">Laboratorio de sincronización</h2>
+<small>Esta prueba genera una carta ficticia con frente y reverso. No selecciona archivos personales ni modifica tu biblioteca.</small>
+<button id="fixture-publish">Publicar muestra ficticia (propietario)</button>
+<button id="fixture-read">Recuperar muestra remota</button>
+<p id="fixture-status" role="status" aria-live="polite"></p>
+<p id="fixture-proof" style="overflow-wrap:anywhere"></p>
+</section>
+<section id="v3-lab-panel" hidden style="border-top:1px solid #5f4c3c;margin-top:16px;padding-top:12px"><h2 style="font:24px Georgia,serif">Laboratorio v3 bidireccional</h2><small>Dos hojas, cinco imágenes ficticias y una fotografía multibloque. No abre tu biblioteca personal. Máximo revisión 3.</small><label for="v3-lab-mode">Modo de transferencia</label><select id="v3-lab-mode"><option value="optimized">Optimizado (2 bloques)</option><option value="reference">Referencia (secuencial)</option></select><button id="v3-lab-create">Crear y publicar muestra v3 (propietario)</button><button id="v3-lab-read">Recuperar revisión v3</button><button id="v3-lab-edit">Editar muestra y publicar</button><button id="v3-lab-retry">Reintentar publicación pendiente</button><p id="v3-lab-status" role="status" aria-live="polite"></p><p id="v3-lab-proof"></p><small id="v3-lab-metrics" style="overflow-wrap:anywhere"></small></section>
+<section id="inc-lab-panel" hidden style="border-top:1px solid #5f4c3c;margin-top:16px;padding-top:12px"><h2 style="font:24px Georgia,serif">Certificación incremental</h2><small>Sin acceso a cartas personales. Imágenes PNG generadas automáticamente. Tamaños aproximados, no archivos seleccionados.</small><label for="inc-lab-size">Muestra</label><select id="inc-lab-size"><option value="small">Pequeña</option><option value="medium" selected>Mediana multibloque</option><option value="large">Grande</option></select><button id="inc-lab-create">Crear y publicar (propietario)</button><button id="inc-lab-read">Recuperar revisión</button><button id="inc-lab-edit">Editar sólo metadatos</button><button id="inc-lab-photo">Reemplazar reverso ficticio</button><button id="inc-lab-retry">Reintentar pendiente</button><button id="inc-lab-status">Consultar cola local</button><button id="inc-lab-cancel" disabled>Interrumpir solicitud</button><p id="inc-lab-status-output" role="status" aria-live="polite"></p><p id="inc-lab-proof" style="overflow-wrap:anywhere"></p><small id="inc-lab-metrics" style="overflow-wrap:anywhere"></small></section><small>Etapa de prueba: sólo se sincronizan muestras ficticias en un bucket separado. El archivo local es independiente de la cuenta Google.</small>
+<p><a href="./index.html">Abrir biblioteca local de este navegador</a></p>
+</main><script type="module" src="./auth-entry.js"></script></body></html>

@@ -1,0 +1,37 @@
+name: Supabase local — closed candidate stack
+on:
+  pull_request:
+    paths:
+      - 'tests/remote/test_supabase_local_closed_stack.py'
+      - 'docs/sql/cloud_03_5c3b*.sql'
+      - 'supabase/functions/archivito-sync-incremental/**'
+      - 'server/sync-incremental*.mjs'
+      - 'app/sync-incremental*.mjs'
+      - 'app/shared-crypto.mjs'
+      - 'app/sync-v3-contract.mjs'
+      - '.github/workflows/incremental-supabase-local.yml'
+permissions:
+  contents: read
+jobs:
+  supabase-local:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      ARCHIVITO_DISPOSABLE_LAB: supabase-e3
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13 # v3
+        with:
+          version: 2.122.0
+      - name: Verify CLI, Docker and Python
+        run: |
+          supabase --version
+          docker version --format '{{.Server.Version}}'
+          python3 -m venv "$RUNNER_TEMP/archivito-e3-venv"
+          "$RUNNER_TEMP/archivito-e3-venv/bin/python" -m pip install --disable-pip-version-check PyYAML==6.0.3
+          "$RUNNER_TEMP/archivito-e3-venv/bin/python" -m py_compile tests/remote/test_supabase_local_closed_stack.py
+      - name: Run local stack without hosted credentials
+        run: |
+          "$RUNNER_TEMP/archivito-e3-venv/bin/python" tests/remote/test_supabase_local_closed_stack.py

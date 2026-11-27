@@ -78,7 +78,7 @@ class ExistingPagesTest(unittest.TestCase):
             return [...d].map(n=>n.toString(16).padStart(2,'0')).join('');
           };
           return {
-            id:r.id,title:r.title,note:r.note,updatedAt:r.updatedAt,
+            id:r.id,title:r.title,note:r.note,updatedAt:r.updatedAt,generation:r.syncGeneration,
             pages:await Promise.all(r.pages.map(async p=>({
               id:p.id,
               front:await sha(p.front),back:await sha(p.back),
@@ -108,6 +108,9 @@ class ExistingPagesTest(unittest.TestCase):
         expect(self.page.locator("#stat-count")).to_have_text("1")
         after=self.extract_record(self.page)
         self.assertEqual(after["id"],before["id"])
+        self.assertRegex(before["generation"],r"^[0-9a-f-]{36}$")
+        self.assertRegex(after["generation"],r"^[0-9a-f-]{36}$")
+        self.assertNotEqual(after["generation"],before["generation"])
         self.assertEqual(after["title"],before["title"])
         self.assertEqual(after["note"],before["note"])
         self.assertEqual(after["pages"][0],before["pages"][0])
@@ -144,6 +147,8 @@ class ExistingPagesTest(unittest.TestCase):
             recovered=self.extract_record(restored)
             self.assertEqual(recovered["pages"],after["pages"])
             self.assertEqual(recovered["note"],after["note"])
+            self.assertNotEqual(recovered["generation"],after["generation"])
+            self.assertNotIn("syncGeneration",data["records"][0])
         finally:
             new_context.close()
 

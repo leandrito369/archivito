@@ -1,0 +1,48 @@
+name: Closed candidate — Deno HTTP and PostgreSQL
+on:
+  pull_request:
+    paths:
+      - 'tests/sql/test_incremental_closed_runtime.py'
+      - 'tests/sql/test_incremental_closed_admin_acl.py'
+      - 'tests/sql/test_incremental_cert_multisession.py'
+      - 'docs/sql/cloud_03_5c3b*.sql'
+      - 'supabase/functions/archivito-sync-incremental/**'
+      - 'server/sync-incremental*.mjs'
+      - 'app/sync-incremental*.mjs'
+      - '.github/workflows/incremental-closed-runtime.yml'
+permissions:
+  contents: read
+jobs:
+  closed-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: disposable
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.5.6
+      - name: Cache pinned SDK and check actual entrypoint
+        run: |
+          deno --version
+          deno cache --node-modules-dir=none supabase/functions/archivito-sync-incremental/index.ts
+          deno check --node-modules-dir=none supabase/functions/archivito-sync-incremental/index.ts
+      - name: Actual Deno HTTP and closed PostgreSQL RPC (local doubles for Auth and REST)
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+          ARCHIVITO_DISPOSABLE_LAB: closed-runtime
+        run: |
+          docker exec "$PG_CONTAINER" createdb -U postgres archivito_cert_lab
+          python3 tests/sql/test_incremental_closed_runtime.py
+          python3 tests/sql/test_incremental_closed_admin_acl.py

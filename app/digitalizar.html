@@ -92,6 +92,7 @@
   </main>
   <script src="./perspective.js"></script>
   <script src="./archive-v3.js"></script>
+<script src="./local-generation.js"></script>
   <script src="./capture-existing.js"></script>
   <script>
     "use strict";
@@ -233,7 +234,7 @@
           const db=open.result;
           try {
             const t=db.transaction("letters","readwrite");
-            t.objectStore("letters").add(record); // add, never replace an existing recuerdo
+            t.objectStore("letters").add(ArchivitoLocalGeneration.stamp(record)); // add, never replace an existing recuerdo
             t.oncomplete=()=>{db.close();resolve();};
             t.onerror=()=>{const err=t.error;db.close();reject(err);};
             t.onabort=()=>{const err=t.error;db.close();reject(err||Error("Transacción abortada"));};
@@ -253,6 +254,7 @@
           await ArchivitoCaptureExisting.save({
             target:existingTarget.target,
             expectedUpdatedAt:existingTarget.expectedUpdatedAt,
+            expectedGeneration:existingTarget.expectedGeneration,
             derived,crop,thumb,
             newBackOriginal:existingTarget.original?null:original
           });

@@ -1,0 +1,12 @@
+# CLOUD-03.1 — Contrato de sincronización sintético
+## Alcance
+Prototipo puro, sin conexión a Supabase ni IndexedDB, sin integración en la UI. Reutiliza Web Crypto de CLOUD-02.1. Cada paquete de prueba contiene archivo, recuerdo, revisión, operación, huella y sobres AES-GCM. El manifiesto cifrado enlaza operación, título, nota, identificadores de activos, lados, MIME, tamaños y SHA-256. El transporte simulado recibe sólo sobres y contexto técnico. El cliente B autentica y verifica todos los activos antes de devolver el recuerdo. Identificadores, tamaños, revisión y patrón de acceso siguen siendo visibles; no se garantiza anonimato.
+
+## Revisión e idempotencia
+La publicación exige expectedRevision + 1, conserva última revisión ante conflicto y registra recibo por archiveId/operationId. Reintentar exactamente el mismo paquete cifrado devuelve el recibo original (no volver a cifrar para un reintento). Un paquete distinto con el mismo operationId es rechazado. La comparación/commit en memoria es síncrona tras calcular digest. No equivale a una transacción Postgres ni a una cola persistente. No hay autenticación en el simulador: no usar como límite de seguridad. Lectura devuelve copias independientes.
+
+## Pruebas
+npm run test:sync (Node 22). Siete pruebas: ida y vuelta A/B con frente y reverso de bytes ficticios; edición concurrente; idempotencia; clave/contexto incorrecto; activo faltante/duplicado/manipulado; ausencia de campos claros adicionales y copias; límites. Los bytes de fixture no son imágenes válidas; el MIME es sólo metadato de contrato. Cap de prototipo: 8 activos y 8 MiB agregados, no formato v3/v4 completo.
+
+## Gates posteriores
+CLOUD-03.2: diseñar esquema de revisiones/recibos transaccionales y adaptadores, staging de activos cifrados, rutas opacas e inmutables, políticas RLS y Storage, reconciliación, cola IndexedDB y conflictos UI. No publicar una revisión hasta confirmar todos los blobs; limpieza de huérfanos sin borrar datos válidos; reintentos persistentes con mismo ciphertext; probar fallo parcial y tercero real. Integración completa v3/v4, cuotas, recuperación, rotación/custodia y respaldo pendientes. No habilitar INSERT ni Storage ni datos reales antes de revisar y certificar. Este PR depende de #22, no merge/deploy automático.
