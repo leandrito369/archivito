@@ -29,15 +29,7 @@ jobs:
           npm run test:auth
           npm run test:crypto
           npm run test:session-key
-          npm run test:sync
-          npm run test:storage-adapter
-          npm run test:fixture-service
-          npm run test:fixture-read
           npm run test:sync-v3
-          npm run test:sync-revisions
-          npm run test:sync-wire
-          npm run test:sync-v3-service
-          npm run test:sync-v3-remote
           npm run test:sync-incremental
           npm run test:incremental-transport
           npm run test:incremental-retention

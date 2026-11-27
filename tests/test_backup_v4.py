@@ -29,6 +29,7 @@ def sha_snapshot(page):
        };
        return await Promise.all(rows.map(async r=>({
          id:r.id,title:r.title,note:r.note,
+         syncGeneration:ArchivitoLocalGeneration.generation(r),
          pages:await Promise.all(r.pages.map(async p=>({
            front:await hash(p.front),back:await hash(p.back),
            frontDerived:await hash(p.frontDerived),
@@ -188,6 +189,12 @@ class BackupEncryptedTests(unittest.TestCase):
             self.assertEqual(before[0]["pages"],after[0]["pages"])
             self.assertEqual(before[0]["title"],after[0]["title"])
             self.assertEqual(before[0]["note"],after[0]["note"])
+            gen_before=before[0]["syncGeneration"]
+            gen_restored=after[0]["syncGeneration"]
+            self.assertRegex(gen_before,r"^[0-9a-f-]{36}$")
+            self.assertRegex(gen_restored,r"^[0-9a-f-]{36}$")
+            self.assertNotEqual(gen_before,gen_restored)
+            self.assertNotIn(gen_before.encode(),backup)
 
             # Reimportar mismo ID debe fallar atómicamente sin sobrescribir.
             second.goto(self.base+"respaldo-v4.html")
@@ -202,6 +209,36 @@ class BackupEncryptedTests(unittest.TestCase):
             second.wait_for_function("typeof db!=='undefined' && db!==null")
             again=sha_snapshot(second)
             self.assertEqual(again,after)
+
+            # Interoperabilidad backup v4 <-> generaciones locales: editar y re-digitalizar
+            # un recuerdo restaurado debe avanzar syncGeneration sin alterar originales.
+            second.locator("#collection .tile").click()
+            second.locator("#edit-record").click()
+            second.locator("#rec-note").fill("Nota actualizada tras restauración v4.")
+            second.locator("#editor-save").click()
+            expect(second.locator("#editor-wrap")).to_have_class("dialogback hidden")
+            edited=sha_snapshot(second)
+            gen_edited=edited[0]["syncGeneration"]
+            self.assertRegex(gen_edited,r"^[0-9a-f-]{36}$")
+            self.assertNotEqual(gen_edited,gen_restored)
+            self.assertEqual(edited[0]["pages"][0]["front"],before[0]["pages"][0]["front"])
+
+            second.locator("#collection .tile").click()
+            second.locator("#capture-front").click()
+            expect(second.locator("#process")).to_be_enabled()
+            second.locator("#process").click()
+            expect(second.locator("#save-archive")).to_be_enabled(timeout=20000)
+            second.locator("#save-archive").click()
+            expect(second.locator("#status")).to_contain_text("Digitalización vinculada",timeout=20000)
+            second.goto(self.base)
+            second.wait_for_function("typeof db!=='undefined' && db!==null")
+            redigitized=sha_snapshot(second)
+            gen_redigitized=redigitized[0]["syncGeneration"]
+            self.assertRegex(gen_redigitized,r"^[0-9a-f-]{36}$")
+            self.assertNotEqual(gen_redigitized,gen_edited)
+            self.assertEqual(redigitized[0]["pages"][0]["front"],before[0]["pages"][0]["front"])
+            self.assertEqual(redigitized[0]["pages"][0]["back"],before[0]["pages"][0]["back"])
+            self.assertIsNotNone(redigitized[0]["pages"][0]["frontDerived"])
         finally:
             original.close()
             restored.close()

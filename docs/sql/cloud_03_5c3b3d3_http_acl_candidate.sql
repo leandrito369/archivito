@@ -64,13 +64,13 @@ create function archivito_inc_cert_candidate.lock_session(p_actor uuid,p_session
 returns void language plpgsql security definer set search_path='' as $e56_bridge$
 begin
  if p_actor is null or p_session is null then
-  raise exception using errcode='42501',message='certification session denied';
+  raise insufficient_privilege using message='certification session denied';
  end if;
  perform 1 from auth.sessions
   where id=p_session and user_id=p_actor and (not_after is null or not_after>clock_timestamp())
   for share;
  if not found then
-  raise exception using errcode='42501',message='certification session denied';
+  raise insufficient_privilege using message='certification session denied';
  end if;
 end $e56_bridge$;
 
@@ -124,16 +124,16 @@ declare r text; k text;
 begin
  if p_actor is null or p_session is null or p_archive is null
     or p_role is null or p_role not in('owner','editor') or p_key is null
- then raise exception using errcode='42501',message='certification denied';end if;
+ then raise insufficient_privilege using message='certification denied';end if;
  -- Exclusive gate lock upfront: no SHARE -> UPDATE upgrade during core step.
  -- Closed gate still rejects in the actual core RPC; this helper cannot open it.
  perform 1 from archivito_inc.gates where archive_id=p_archive for update;
- if not found then raise exception using errcode='42501',message='certification denied';end if;
+ if not found then raise insufficient_privilege using message='certification denied';end if;
  perform archivito_inc_cert_candidate.lock_session(p_actor,p_session);
  select role into r from public.archive_members where archive_id=p_archive and user_id=p_actor for share;
  select key_fingerprint into k from public.archives where id=p_archive for share;
  if k is distinct from p_key or r is distinct from p_role
- then raise exception using errcode='42501',message='certification membership denied';end if;
+ then raise insufficient_privilege using message='certification membership denied';end if;
 end $$;
 revoke all on function archivito_inc_cert_candidate.lock_actor_context(uuid,uuid,uuid,text,text) from public,anon,authenticated,service_role;
 grant execute on function archivito_inc_cert_candidate.lock_actor_context(uuid,uuid,uuid,text,text) to archivito_cert_executor;
@@ -147,10 +147,10 @@ declare w archivito_inc_cert_candidate.windows%rowtype;
 begin
  select * into w from archivito_inc_cert_candidate.windows where archive_id=p_archive for update;
  if not found or w.enabled is distinct from true or clock_timestamp()<w.opened_at or clock_timestamp()>=w.expires_at
- then raise exception using errcode='42501',message='certification denied';end if;
- if p_actor is null or p_session is null or p_actor not in(w.owner_id,w.editor_id) then raise exception using errcode='42501',message='certification denied';end if;
+ then raise insufficient_privilege using message='certification denied';end if;
+ if p_actor is null or p_session is null or p_actor not in(w.owner_id,w.editor_id) then raise insufficient_privilege using message='certification denied';end if;
  perform archivito_inc_cert_candidate.lock_actor_context(p_actor,p_session,p_archive,case when p_actor=w.owner_id then 'owner' else 'editor' end,w.key_id);
- if clock_timestamp()>=w.expires_at then raise exception using errcode='42501',message='certification denied';end if;
+ if clock_timestamp()>=w.expires_at then raise insufficient_privilege using message='certification denied';end if;
  return w;
 end $$;
 
@@ -177,7 +177,7 @@ begin
   end if;
  elsif p_action='intent' then
   select * into f from archivito_inc_cert_candidate.fences where window_id=win.id and operation_id=p_operation;
-  if not found then raise exception using errcode='42501',message='certification fence denied';end if;
+  if not found then raise insufficient_privilege using message='certification fence denied';end if;
   perform archivito_inc_cert_candidate.assert_fence(win.id,p_archive,p_actor,win.key_id,f.memory_id,p_operation,p_generation,p_token,f.wire_digest,true);
   result:=public.sync_inc_inspect(p_actor,p_archive,'intent',null,p_operation,null);
   select * into strict i from archivito_inc_cert_candidate.wire_identity(result);

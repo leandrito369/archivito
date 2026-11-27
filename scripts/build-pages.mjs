@@ -10,14 +10,17 @@ const repo = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const src = join(repo, "app"), destination = join(repo, "dist");
 const appOut = join(destination, "app");
 
-// Lista explícita: ningún archivo inesperado dentro de app/ se publica.
+// Lista explícita: ningún archivo inesperado ni herramienta de laboratorio dentro de app/ se publica.
 const publicFiles = [
   "index.html", "digitalizar.html", "visor-3d.html",
   "archive-v3.js", "local-generation.js", "capture-existing.js", "paper-math.js",
-  "perspective.js", "visor-3d-data.js", "acceso.html", "auth-return.js", "crypto-lab.html",
+  "perspective.js", "visor-3d-data.js", "acceso.html", "auth-return.js",
   "respaldo-v4.html", "crypto-v4.js", "backup-v4.js"
 ];
-const mandatory = ["index.html", "digitalizar.html", "visor-3d.html", "acceso.html", "auth-return.js", "crypto-lab.html"];
+const mandatory = [
+  "index.html", "digitalizar.html", "visor-3d.html", "acceso.html", "auth-return.js",
+  "local-generation.js", "respaldo-v4.html", "crypto-v4.js", "backup-v4.js"
+];
 async function exists(path) { try { return (await stat(path)).isFile(); } catch { return false; } }
 
 async function main() {
@@ -65,17 +68,11 @@ async function main() {
       __ARCHIVITO_SUPABASE_PUBLISHABLE_KEY__:JSON.stringify(supabaseKey)
     }
   });
-  await build({
-    entryPoints:[join(src,"crypto-lab.js")],
-    outfile:join(appOut,"crypto-lab.js"),
-    bundle:true,platform:"browser",format:"esm",target:"es2022",minify:true,
-    sourcemap:false,legalComments:"eof"
-  });
   const libraryPath=join(appOut,"index.html");
   const library=await readFile(libraryPath,"utf8");
   if(!library.includes("<head>")||!library.includes("</body>"))throw Error("HTML de biblioteca inesperado.");
   await writeFile(libraryPath,library.replace("<head>",'<head><meta name="referrer" content="no-referrer"><script src="./auth-return.js"></script>')
-    .replace("</body>",'<p style="text-align:center;padding:16px"><a href="./acceso.html" style="color:#eac99a">Acceso compartido — prueba Google</a></p></body>'),"utf8");
+    .replace("</body>",'<p style="text-align:center;padding:16px"><a href="./acceso.html" style="color:#eac99a">Acceso compartido (Google)</a></p></body>'),"utf8");
 
   const visorFile = join(appOut, "visor-3d.html");
   const html = await readFile(visorFile, "utf8");
@@ -87,9 +84,9 @@ async function main() {
   const landing = [
     '<!doctype html><html lang="es"><head><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width,initial-scale=1">',
-    '<meta http-equiv="refresh" content="0;url=/app/acceso.html">',
+    '<meta http-equiv="refresh" content="0;url=/app/index.html">',
     '<title>Archivito</title></head><body>',
-    '<p><a href="/app/acceso.html">Abrir Archivito</a></p></body></html>'
+    '<p><a href="/app/index.html">Abrir Archivito</a></p></body></html>'
   ].join("\n");
   await writeFile(join(destination, "index.html"), landing, "utf8");
 
@@ -103,7 +100,7 @@ async function main() {
   await writeFile(join(destination, "_headers"), headers, "utf8");
 
   const files = await readdir(appOut);
-  if (files.some(name => !publicFiles.includes(name) && !["visor-three.js","auth-entry.js","crypto-lab.js"].includes(name)))
+  if (files.some(name => !publicFiles.includes(name) && !["visor-three.js","auth-entry.js"].includes(name)))
     throw Error("Archivo no permitido en dist/app.");
   console.log("Archivito Pages: build estático en dist/ (" + files.length + " archivos).");
 }

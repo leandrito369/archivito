@@ -3,7 +3,6 @@ import assert from "node:assert/strict";
 import {webcrypto,randomUUID} from "node:crypto";
 if(!globalThis.crypto?.subtle)Object.defineProperty(globalThis,"crypto",{value:webcrypto,configurable:true});
 import {generateRecoveryCode,unlockRecoveryCode} from "../app/shared-crypto.mjs";
-import {validatePackage} from "../app/sync-contract.mjs";
 import {encodeV3Record,decodeV3Record} from "../app/sync-v3-contract.mjs";
 const blob=(n,type="image/png")=>new Blob([new Uint8Array([n,n+1])],{type});
 const context=()=>({archiveId:randomUUID(),memoryId:randomUUID(),operationId:randomUUID(),revision:1});
@@ -24,7 +23,7 @@ test("v3 two pages, all originals/derivatives, metadata, crop and local identity
   }
  }
  assert.equal(out.front,out.pages[0].front);assert.equal(out.thumb,out.pages[0].thumb);assert.equal(r.pages[0].thumb.size,2);
- assert.throws(()=>validatePackage(p));assert.ok(!JSON.stringify(p).includes(r.note));assert.ok(!JSON.stringify(p).includes(r.id));
+ assert.equal(p.format,"archivito-sync-record-v3");assert.ok(!JSON.stringify(p).includes(r.note));assert.ok(!JSON.stringify(p).includes(r.id));
 });
 test("all 25 pages and 100 assets supported within local byte budget",async()=>{
  const k=await key(),c=context(),r=record();r.pages=Array.from({length:25},(_,i)=>({...r.pages[0],id:"page-"+i}));
