@@ -4,7 +4,6 @@ on:
     paths:
       - 'tests/remote/test_supabase_local_closed_stack.py'
       - 'tests/remote/test_supabase_local_promotion_rollback.py'
-      - 'tests/remote/fixtures/edge_v1_legacy.ts'
       - 'docs/sql/cloud_03_5c3b*.sql'
       - 'supabase/functions/archivito-sync-incremental/**'
       - 'server/sync-incremental*.mjs'
@@ -24,6 +23,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13 # v3
         with:
           version: 2.122.0
