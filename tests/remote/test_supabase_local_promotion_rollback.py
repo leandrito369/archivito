@@ -4,8 +4,11 @@ No hosted deployment, no gate opening, no same-slug rollout simulation claim.
 import json
 import os
 from pathlib import Path
+import subprocess
 import tempfile
+import threading
 import time
+import uuid
 
 from test_supabase_local_closed_stack import (
     Lab, ROOT, SOURCES, SC, ARCHIVE, MEMORY, KEY, BUCKET, FUNCTION, ORIGIN,
@@ -18,7 +21,9 @@ INSPECT="public.sync_inc_inspect(uuid,uuid,text,uuid,uuid,uuid)"
 RPC="public.sync_inc_cert_http(uuid,uuid,text,uuid,jsonb,uuid,uuid,uuid,text,bigint,uuid)"
 EXECUTOR="archivito_cert_executor"
 TABLES=("gates","operations","manifests","heads","assets","blocks","refs","holds")
-MANAGED=(("public","archives"),("public","archive_members"),("auth","sessions"),("storage","objects"))
+OWNED_PUBLIC=(("public","archives"),("public","archive_members"))
+STEP_LEGACY_MD5="2ba9746fdc9d7ae955832f7c07bf1ead"
+STEP_PATCHED_MD5="d010b597b7cc21cae66b9fa09d01e3d0"
 
 class PromotionLab(Lab):
     def configure(self):
@@ -156,16 +161,20 @@ class PromotionLab(Lab):
         # Confirm no legacy API role has effective column UPDATE access, not merely no schema USAGE.
         require(self.sql("""select not exists(select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='archivito_inc' and c.relkind='r' and has_any_column_privilege('service_role',c.oid,'UPDATE'));""")=="t","residual legacy column UPDATE ACL")
         passed("candidate SQL committed locally with closed window and ACL")
+    def legacy_step_restore_sql(self):
+        core=(ROOT/"docs/sql"/SOURCES[0]).read_text()
+        start=core.index("create function public.sync_inc_step(")
+        end=core.index("end $$;",start)+len("end $$;")
+        return "create or replace function "+core[start+len("create function "):end]
     def rollback(self):
         self.audit(0)
-        # Only candidate role and candidate policies in this unique local DB.
+        # Only candidate role and candidate policies on owned tables (zero on auth/storage).
         # Fail if any unknown policy or nonempty candidate operational state.
         expected=set()
-        for schema,table in MANAGED:
+        for schema,table in OWNED_PUBLIC:
             expected.add((schema,table,"inc_cert_exec_read"))
-            if table!="objects":
-                expected.add((schema,table,"inc_cert_exec_lock"))
-                expected.add((schema,table,"inc_cert_exec_no_mutation"))
+            expected.add((schema,table,"inc_cert_exec_lock"))
+            expected.add((schema,table,"inc_cert_exec_no_mutation"))
         for table in TABLES:
             expected.add(("archivito_inc",table,"inc_cert_exec_read"))
             if table in ("operations","manifests","heads","assets","blocks","refs"):
@@ -176,12 +185,14 @@ class PromotionLab(Lab):
         rows=json.loads(self.sql("""select coalesce(jsonb_agg(jsonb_build_array(schemaname,tablename,policyname)),'[]'::jsonb)
            from pg_policies where 'archivito_cert_executor'=any(roles) and schemaname<>'archivito_inc_cert_candidate';"""))
         require({tuple(x) for x in rows}==expected,"unexpected candidate policies; rollback refused")
+        require(self.sql(f"select md5(prosrc)='{STEP_PATCHED_MD5}' from pg_proc where oid='{STEP}'::regprocedure;")=="t","unexpected sync_inc_step before rollback")
         # Drop known candidate functions explicitly before tables/schema, no
         # CASCADE on public or managed schemas. Restrict detects external dependencies.
         functions=json.loads(self.sql(f"""select jsonb_agg(p.oid::regprocedure::text order by p.oid::regprocedure::text)
           from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='{SC}';"""))
-        require(len(functions)==9,"unexpected candidate function count")
-        order=("dispatch","actor_guard","lock_actor_context","fenced_step","claim_begin","wire_identity","assert_fence","claim","guard_window")
+        require(len(functions)==11,"unexpected candidate function count")
+        order=("dispatch","actor_guard","lock_actor_context","fenced_step","claim_begin",
+               "wire_identity","assert_fence","claim","guard_window","lock_session","object_matches")
         require(all(sum(x.startswith(SC+"."+name+"(") for x in functions)==1 for name in order),"unexpected candidate function names")
         drops="\n".join("drop policy "+policy+" on "+schema+"."+table+";" for schema,table,policy in sorted(expected))
         for name in order:
@@ -191,7 +202,8 @@ class PromotionLab(Lab):
         grants="\n".join(line for n in SOURCES[:2] for line in (ROOT/"docs/sql"/n).read_text().splitlines()
                          if line.startswith("grant ") and line.endswith(" to service_role;"))
         require(len(grants.splitlines())==11,"legacy grant source count")
-        self.sql("begin;\n"+f"drop function {RPC};\n"+drops+f"""
+        restore_step=self.legacy_step_restore_sql()
+        self.sql("begin;\n"+f"drop function {RPC};\n"+restore_step+"\n"+drops+f"""
           drop table {SC}.fences;
           drop table {SC}.windows;
           drop schema {SC};
@@ -200,82 +212,136 @@ class PromotionLab(Lab):
           {grants}
           notify pgrst,'reload schema';
           commit;""")
+        require(self.sql(f"select md5(prosrc)='{STEP_LEGACY_MD5}' from pg_proc where oid='{STEP}'::regprocedure;")=="t","sync_inc_step MD5 after rollback")
         passed("committed rollback SQL executed locally")
-    def restricted_bridge_probe(self,baseline):
-        # Disposable transaction only: emulate the relevant existing hosted
-        # privileges, not hosted platform ownership or a deployable candidate.
+    def non_superuser_promotion_probe(self,baseline):
+        # Disposable transaction only: execute the EXACT candidate SQL under a
+        # restricted non-superuser admin matching verified hosted postgres grants.
         token,session=self.login("A")
+        a,b=(lit(self.users[k]) for k in "AB")
         try:
             q=f"""begin;
-              create role e5_probe_admin nologin nosuperuser noinherit bypassrls;
-              create role e5_probe_executor nologin nosuperuser noinherit nobypassrls;
-              grant usage on schema auth,storage to e5_probe_admin;
-              grant select(id,user_id,not_after),update(id) on auth.sessions to e5_probe_admin;
-              grant select(bucket_id,name,metadata) on storage.objects to e5_probe_admin;
-              create schema e5_probe_private authorization e5_probe_admin;
-              set local role e5_probe_admin;
-              revoke all on schema e5_probe_private from public;
-              grant usage on schema e5_probe_private to e5_probe_executor;
-              create function e5_probe_private.lock_session(p_actor uuid,p_session uuid)
-              returns void language plpgsql security definer set search_path='' as $e5_bridge$
-              begin
-                perform 1 from auth.sessions
-                  where id=p_session and user_id=p_actor and (not_after is null or not_after>clock_timestamp())
-                  for share;
-                if not found then raise exception using errcode='42501',message='certification session denied';end if;
-              end $e5_bridge$;
-              create function e5_probe_private.object_matches(p_path text,p_size bigint)
-              returns boolean language sql security definer set search_path='' as $e5_bridge$
-                select exists(select 1 from storage.objects where bucket_id='archivito-inc-private'
-                  and name=p_path and (metadata->>'size')::bigint=p_size);
-              $e5_bridge$;
-              revoke all on all functions in schema e5_probe_private from public,anon,authenticated,service_role;
-              grant execute on function e5_probe_private.lock_session(uuid,uuid),e5_probe_private.object_matches(text,bigint) to e5_probe_executor;
+              create role e56_deploy_admin nologin nosuperuser createrole noinherit bypassrls;
+              grant create on database postgres to e56_deploy_admin;
+              grant create,usage on schema public to e56_deploy_admin with grant option;
+              grant usage on schema auth,storage to e56_deploy_admin;
+              grant select(id,user_id,not_after),update(id) on auth.sessions to e56_deploy_admin;
+              grant select(bucket_id,name,metadata) on storage.objects to e56_deploy_admin;
+              alter table public.archives owner to e56_deploy_admin;
+              alter table public.archive_members owner to e56_deploy_admin;
+              alter schema archivito_inc owner to e56_deploy_admin;
+              alter function {STEP} owner to e56_deploy_admin;
+              alter function {INSPECT} owner to e56_deploy_admin;
+              do $e56_own$ declare t text; begin
+                foreach t in array array['gates','operations','manifests','heads','assets','blocks','refs','holds'] loop
+                  execute format('alter table archivito_inc.%I owner to e56_deploy_admin',t);
+                end loop;
+              end $e56_own$;
+              set local role e56_deploy_admin;
+              {self.candidate_source()}
+              insert into {SC}.windows values('73ac551b-2df8-4da7-91b8-4adf18d83991',{lit(ARCHIVE)},{a},{b},{lit(KEY)},
+                statement_timestamp(),statement_timestamp()+interval '15 minutes',false,67108864,24);
               reset role;
-              do $e5_bridge$
-              begin
-                if (select rolsuper or not rolbypassrls from pg_roles where rolname='e5_probe_admin')
-                  or (select rolsuper or rolbypassrls or rolcanlogin from pg_roles where rolname='e5_probe_executor')
-                  or has_schema_privilege('e5_probe_admin','auth','USAGE WITH GRANT OPTION')
-                  or has_column_privilege('e5_probe_admin','auth.sessions','id','UPDATE WITH GRANT OPTION')
-                  or has_column_privilege('e5_probe_executor','auth.sessions','id','SELECT')
-                  or has_column_privilege('e5_probe_executor','auth.sessions','id','UPDATE')
-                  or has_column_privilege('e5_probe_executor','storage.objects','metadata','SELECT')
-                  or has_table_privilege('e5_probe_executor','storage.objects','INSERT,UPDATE,DELETE,TRUNCATE')
-                  or exists(select 1 from unnest(array['anon','authenticated','service_role']) r(role_name)
-                    where has_function_privilege(r.role_name,'e5_probe_private.lock_session(uuid,uuid)','EXECUTE')
-                       or has_function_privilege(r.role_name,'e5_probe_private.object_matches(text,bigint)','EXECUTE')
-                       or pg_has_role(r.role_name,'e5_probe_executor','MEMBER'))
-                then raise exception 'bridge ACL mismatch';end if;
-              end $e5_bridge$;
-              set local role e5_probe_executor;
-              select e5_probe_private.lock_session({lit(self.users['A'])},{lit(session)});
-              do $e5_bridge$
-              begin
+              do $e56_chk$ begin
+                if (select rolsuper or not rolcreaterole or not rolbypassrls from pg_roles where rolname='e56_deploy_admin')
+                  or pg_has_role('e56_deploy_admin','{EXECUTOR}','SET')
+                  or has_schema_privilege('e56_deploy_admin','auth','USAGE WITH GRANT OPTION')
+                  or has_column_privilege('e56_deploy_admin','auth.sessions','id','UPDATE WITH GRANT OPTION')
+                  or has_schema_privilege('{EXECUTOR}','{SC}','CREATE')
+                  or has_schema_privilege('{EXECUTOR}','auth','USAGE')
+                  or has_schema_privilege('{EXECUTOR}','storage','USAGE')
+                  or exists(select 1 from pg_policies where '{EXECUTOR}'=any(roles) and schemaname in ('auth','storage'))
+                  or not (select pg_get_userbyid(proowner)='{EXECUTOR}' from pg_proc where oid='{SC}.dispatch(uuid,uuid,text,uuid,jsonb,uuid,uuid,uuid,text,bigint,uuid)'::regprocedure)
+                  or not (select pg_get_userbyid(proowner)='e56_deploy_admin' from pg_proc where oid='{SC}.lock_session(uuid,uuid)'::regprocedure)
+                  or not (select pg_get_userbyid(proowner)='e56_deploy_admin' from pg_proc where oid='{SC}.object_matches(text,bigint)'::regprocedure)
+                  or not (select md5(prosrc)='{STEP_PATCHED_MD5}' from pg_proc where oid='{STEP}'::regprocedure)
+                then raise exception 'non-superuser candidate deployment invariant failed'; end if;
+              end $e56_chk$;
+              set local role {EXECUTOR};
+              select 1 from {SC}.windows where archive_id={lit(ARCHIVE)} for update;
+              select {SC}.lock_actor_context({a},{lit(session)},{lit(ARCHIVE)},'owner',{lit(KEY)});
+              do $e56_run$ begin
                 begin
-                  perform e5_probe_private.lock_session({lit(self.users['B'])},{lit(session)});
+                  perform {SC}.lock_session({b},{lit(session)});
                   raise exception 'cross-actor session accepted';
                 exception when insufficient_privilege then
-                  if sqlerrm<>'certification session denied' then raise;end if;
+                  if sqlerrm<>'certification session denied' then raise; end if;
                 end;
-                if e5_probe_private.object_matches('synthetic-absent',32)
-                then raise exception 'nonexistent object matched';end if;
-              end $e5_bridge$;
+                if {SC}.object_matches('synthetic-absent',32) then raise exception 'absent object matched'; end if;
+              end $e56_run$;
               rollback;"""
             self.sql(q)
-            passed("restricted non-superuser private bridges: exact session lock, cross-actor denial, absent object, API ACL; transaction reverted")
+            passed("non-superuser exact candidate SQL promotion, dispatch ownership transfer, zero managed policies, real session lock; reverted")
         finally:
             status,_,_=self.request("/auth/v1/logout?scope=local",self.anon,token,{},method="POST")
-            require(status in (200,204),"bridge probe logout")
-        require(self.sql("""select to_regnamespace('e5_probe_private') is null
-          and not exists(select 1 from pg_roles where rolname in ('e5_probe_admin','e5_probe_executor'));""")=="t","bridge probe objects remain")
+            require(status in (200,204),"non-superuser probe logout")
+        require(self.sql(f"""select to_regnamespace('{SC}') is null
+          and not exists(select 1 from pg_roles where rolname in ('e56_deploy_admin','{EXECUTOR}'));""")=="t","non-superuser probe objects remain")
         self.legacy_state(baseline)
+    def promoted_bridges_live_probe(self):
+        # Exercise integrated bridges against real GoTrue logout concurrency and
+        # real Supabase Storage upload/match/delete while gate stays hard-closed.
+        token,session=self.login("A")
+        holder=subprocess.Popen(
+            ["docker","exec","-i",self.db,"psql","-X","-qAt","-U","supabase_admin","-d","postgres","-v","ON_ERROR_STOP=1"],
+            stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,bufsize=1,cwd=self.work,env=self.env)
+        logout_result={}
+        def do_logout():
+            status,_,_=self.request("/auth/v1/logout?scope=local",self.anon,token,{},method="POST")
+            logout_result["status"]=status
+        try:
+            holder.stdin.write(f"begin;\nset local role {EXECUTOR};\nselect {SC}.lock_session({lit(self.users['A'])},{lit(session)});\nselect 'LOCKED';\n")
+            holder.stdin.flush()
+            require(holder.stdout.readline().strip()=="LOCKED","lock_session holder did not reach barrier")
+            t=threading.Thread(target=do_logout,daemon=True)
+            t.start()
+            time.sleep(1.2)
+            # While FOR SHARE is held on auth.sessions, GoTrue logout must serialize
+            # and must not delete the row prematurely.
+            require(t.is_alive(),"real GoTrue logout bypassed lock_session FOR SHARE")
+            require(self.sql(f"select count(*) from auth.sessions where id={lit(session)};")=="1","session deleted while locked")
+            out,err=holder.communicate("rollback;\n\\q\n",timeout=15)
+            require(holder.returncode==0,"lock_session holder release failed: "+err[:200])
+            t.join(timeout=20)
+            require(not t.is_alive() and logout_result.get("status") in (200,204),"real GoTrue logout failed after lock release")
+        finally:
+            if holder.poll() is None:
+                holder.kill();holder.communicate()
+        self.audit(0)
+        r=self.sql(f"begin; set local role {EXECUTOR}; select {SC}.lock_session({lit(self.users['A'])},{lit(session)}); rollback;",allow_fail=True)
+        require(r.returncode!=0 and "certification session denied" in r.stderr,"post-logout lock_session accepted")
+        passed("real GoTrue logout serialized against lock_session FOR SHARE; revoked session subsequently denied")
+
+        # Real positive and negative Storage object_matches in private incremental bucket.
+        asset_id=str(uuid.uuid4())
+        obj_path=f"{ARCHIVE}/{MEMORY}/{asset_id}/0"
+        status,_,_=self.request("/storage/v1/object/"+BUCKET+"/"+obj_path,self.service,self.service,b"x"*32,
+            method="POST",extra={"Content-Type":"application/octet-stream","x-upsert":"false"})
+        require(status in (200,201),"real Storage synthetic upload")
+        try:
+            bad_idx=f"{ARCHIVE}/{MEMORY}/{asset_id}/9"
+            ok=self.sql(f"""begin; set local role {EXECUTOR};
+              select {SC}.object_matches({lit(obj_path)},32)
+                and not {SC}.object_matches({lit(obj_path)},31)
+                and not {SC}.object_matches({lit(obj_path)},0)
+                and not {SC}.object_matches({lit(obj_path)},4194305)
+                and not {SC}.object_matches('../escape',32)
+                and not {SC}.object_matches({lit(bad_idx)},32);
+              rollback;""")
+            require(ok=="t","real Storage object_matches assertions")
+        finally:
+            status,_,_=self.request("/storage/v1/object/"+BUCKET,self.service,self.service,{"prefixes":[obj_path]},method="DELETE")
+            require(status in (200,204),"real Storage synthetic cleanup")
+        status,_,d=self.request("/storage/v1/object/list/"+BUCKET,self.service,self.service,{"prefix":"","limit":100,"offset":0})
+        require(status==200 and d==[],"real Storage empty after object_matches probe")
+        self.audit(0)
+        passed("real Supabase Storage positive and negative object_matches verified and cleaned up")
     def probe(self):
         self.cors_isolation()
         baseline=self.snapshot()
         self.legacy_state(baseline)
         self.phase_probes("BASELINE",False)
-        self.restricted_bridge_probe(baseline)
+        self.non_superuser_promotion_probe(baseline)
         # Force a transaction failure after candidate SQL but before commit.
         r=self.sql("begin;\n"+self.candidate_source()+"\nselect 1/0;\ncommit;",allow_fail=True)
         require(r.returncode!=0 and "division by zero" in r.stderr,"injected promotion failure not reached")
@@ -283,6 +349,7 @@ class PromotionLab(Lab):
         passed("injected SQL failure rolled back all candidate DDL and ACL")
         self.promote()
         self.phase_probes("PROMOTED",True)
+        self.promoted_bridges_live_probe()
         self.rollback()
         self.legacy_state(baseline)
         self.phase_probes("ROLLED BACK",False)

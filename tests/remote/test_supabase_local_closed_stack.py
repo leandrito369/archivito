@@ -485,10 +485,31 @@ class Lab:
           and (select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
                where c.relrowsecurity and ((n.nspname='archivito_inc' and c.relkind='r') or
                (n.nspname,c.relname) in (('auth','sessions'),('public','archives'),('public','archive_members'),('storage','objects'))))=12
+          and not has_schema_privilege('archivito_cert_executor','auth','USAGE')
+          and not has_schema_privilege('archivito_cert_executor','storage','USAGE')
+          and not has_schema_privilege('archivito_cert_executor','{SC}','CREATE')
+          and not has_column_privilege('archivito_cert_executor','auth.sessions','id','SELECT')
+          and not has_column_privilege('archivito_cert_executor','auth.sessions','id','UPDATE')
           and not has_column_privilege('archivito_cert_executor','auth.sessions','not_after','UPDATE')
+          and not has_column_privilege('archivito_cert_executor','storage.objects','metadata','SELECT')
           and not has_column_privilege('archivito_cert_executor','public.archives','key_fingerprint','UPDATE')
           and not has_column_privilege('archivito_cert_executor','public.archive_members','role','UPDATE')
-          and not has_table_privilege('archivito_cert_executor','storage.objects','INSERT,UPDATE,DELETE,TRUNCATE')
+          and not has_table_privilege('archivito_cert_executor','storage.objects','SELECT,INSERT,UPDATE,DELETE,TRUNCATE')
+          and not exists(select 1 from pg_policies where 'archivito_cert_executor'=any(roles) and schemaname in ('auth','storage'))
+          and not has_function_privilege('service_role','{SC}.lock_session(uuid,uuid)','EXECUTE')
+          and not has_function_privilege('authenticated','{SC}.lock_session(uuid,uuid)','EXECUTE')
+          and not has_function_privilege('anon','{SC}.lock_session(uuid,uuid)','EXECUTE')
+          and not has_function_privilege('service_role','{SC}.object_matches(text,bigint)','EXECUTE')
+          and not has_function_privilege('authenticated','{SC}.object_matches(text,bigint)','EXECUTE')
+          and not has_function_privilege('anon','{SC}.object_matches(text,bigint)','EXECUTE')
+          and (select pg_get_userbyid(proowner)='archivito_cert_executor' and prosecdef
+               from pg_proc where oid='{SC}.dispatch(uuid,uuid,text,uuid,jsonb,uuid,uuid,uuid,text,bigint,uuid)'::regprocedure)
+          and (select pg_get_userbyid(proowner)<>'archivito_cert_executor' and prosecdef and proconfig @> array['search_path=']
+               from pg_proc where oid='{SC}.lock_session(uuid,uuid)'::regprocedure)
+          and (select pg_get_userbyid(proowner)<>'archivito_cert_executor' and prosecdef and proconfig @> array['search_path=']
+               from pg_proc where oid='{SC}.object_matches(text,bigint)'::regprocedure)
+          and (select md5(prosrc)='d010b597b7cc21cae66b9fa09d01e3d0' and not prosecdef
+               from pg_proc where oid='public.sync_inc_step(uuid,text,jsonb,uuid,text)'::regprocedure)
           and not has_schema_privilege('service_role','archivito_inc','USAGE')
           and not has_function_privilege('service_role','public.sync_inc_step(uuid,text,jsonb,uuid,text)','EXECUTE')
           and not has_function_privilege('service_role','public.sync_inc_inspect(uuid,uuid,text,uuid,uuid,uuid)','EXECUTE')

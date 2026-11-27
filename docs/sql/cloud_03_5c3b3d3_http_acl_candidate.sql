@@ -1,8 +1,9 @@
 -- CANDIDATE ONLY: isolated database, after C3B3D.2 sources. Never apply to hosted DB.
 -- Existing hard-closed CHECK remains intact. No window rows, no opening DDL.
--- Dedicated non-login role: no bypassrls, no membership granted to API roles.
+-- Dedicated non-login role: no bypassrls, no membership granted to API roles,
+-- and no direct privileges or RLS policies on Supabase-managed auth/storage schemas.
 create role archivito_cert_executor nologin noinherit nobypassrls;
-grant usage on schema public,auth,storage,archivito_inc,archivito_inc_cert_candidate to archivito_cert_executor;
+grant usage on schema public,archivito_inc,archivito_inc_cert_candidate to archivito_cert_executor;
 grant usage on schema archivito_inc_cert_candidate to service_role;
 revoke all on schema archivito_inc from public,anon,authenticated,service_role;
 revoke all on all tables in schema archivito_inc from public,anon,authenticated,service_role;
@@ -22,19 +23,15 @@ grant insert on archivito_inc.refs to archivito_cert_executor;
 grant select on archivito_inc_cert_candidate.windows,archivito_inc_cert_candidate.fences to archivito_cert_executor;
 grant update(enabled) on archivito_inc_cert_candidate.windows to archivito_cert_executor;
 grant insert,update(generation,token,lease_until) on archivito_inc_cert_candidate.fences to archivito_cert_executor;
--- Row locks need UPDATE privilege. WITH CHECK false prevents actual mutation of
--- authorization rows through this executor. Existing policies are not replaced.
+-- Row locks need UPDATE privilege on owned app tables. WITH CHECK false prevents
+-- actual mutation of authorization rows through this executor. Existing policies
+-- are not replaced, and no grants/policies are created on auth.* or storage.*.
 grant select(id,key_fingerprint),update(id) on public.archives to archivito_cert_executor;
 grant select(archive_id,user_id,role),update(user_id) on public.archive_members to archivito_cert_executor;
-grant select(id,user_id,not_after),update(id) on auth.sessions to archivito_cert_executor;
-grant select(bucket_id,name,metadata) on storage.objects to archivito_cert_executor;
 create policy inc_cert_exec_read on public.archives for select to archivito_cert_executor using(true);
 create policy inc_cert_exec_lock on public.archives for update to archivito_cert_executor using(true) with check(false);
 create policy inc_cert_exec_read on public.archive_members for select to archivito_cert_executor using(true);
 create policy inc_cert_exec_lock on public.archive_members for update to archivito_cert_executor using(true) with check(false);
-create policy inc_cert_exec_read on auth.sessions for select to archivito_cert_executor using(true);
-create policy inc_cert_exec_lock on auth.sessions for update to archivito_cert_executor using(true) with check(false);
-create policy inc_cert_exec_read on storage.objects for select to archivito_cert_executor using(bucket_id='archivito-inc-private');
 do $$ declare t text; begin
  foreach t in array array['gates','operations','manifests','heads','assets','blocks','refs','holds'] loop
   execute format('create policy inc_cert_exec_read on archivito_inc.%I for select to archivito_cert_executor using(true)',t);
@@ -57,9 +54,63 @@ create policy inc_cert_exec_update on archivito_inc_cert_candidate.fences for up
 -- from turning lock-only privileges into permission to change authz rows.
 create policy inc_cert_exec_no_mutation on public.archives as restrictive for update to archivito_cert_executor using(true) with check(false);
 create policy inc_cert_exec_no_mutation on public.archive_members as restrictive for update to archivito_cert_executor using(true) with check(false);
-create policy inc_cert_exec_no_mutation on auth.sessions as restrictive for update to archivito_cert_executor using(true) with check(false);
 create policy inc_cert_exec_no_mutation on archivito_inc.gates as restrictive for update to archivito_cert_executor using(true) with check(false);
 create policy inc_cert_exec_no_mutation on archivito_inc_cert_candidate.windows as restrictive for update to archivito_cert_executor using(true) with check(false);
+
+-- Minimal private SECURITY DEFINER bridges owned by the deploying non-superuser
+-- admin (postgres). No dynamic SQL, no row exposure, fixed bucket/path/size checks,
+-- and EXECUTE restricted exclusively to archivito_cert_executor.
+create function archivito_inc_cert_candidate.lock_session(p_actor uuid,p_session uuid)
+returns void language plpgsql security definer set search_path='' as $e56_bridge$
+begin
+ if p_actor is null or p_session is null then
+  raise exception using errcode='42501',message='certification session denied';
+ end if;
+ perform 1 from auth.sessions
+  where id=p_session and user_id=p_actor and (not_after is null or not_after>clock_timestamp())
+  for share;
+ if not found then
+  raise exception using errcode='42501',message='certification session denied';
+ end if;
+end $e56_bridge$;
+
+create function archivito_inc_cert_candidate.object_matches(p_path text,p_size bigint)
+returns boolean language sql security definer set search_path='' as $e56_bridge$
+ select p_path is not null
+  and p_size is not null
+  and p_size between 1 and 4194304
+  and p_path ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/[0-8]$'
+  and exists(
+   select 1 from storage.objects s
+   where s.bucket_id='archivito-inc-private'
+     and s.name=p_path
+     and (s.metadata->>'size')::bigint=p_size
+  );
+$e56_bridge$;
+revoke all on function archivito_inc_cert_candidate.lock_session(uuid,uuid),archivito_inc_cert_candidate.object_matches(text,bigint) from public,anon,authenticated,service_role;
+grant execute on function archivito_inc_cert_candidate.lock_session(uuid,uuid),archivito_inc_cert_candidate.object_matches(text,bigint) to archivito_cert_executor;
+
+-- Surgical update of the two Storage predicates in public.sync_inc_step.
+-- Pinned to the exact verified baseline prosrc MD5; aborts on any core drift.
+do $e56_step$
+declare
+ src text;
+ patched text;
+ p1 text := E'exists(\n    select 1 from storage.objects s where s.bucket_id=''archivito-inc-private'' and s.name=b.path and (s.metadata->>''size'')::bigint=b.bytes)';
+ p2 text := 'exists(select 1 from storage.objects s where s.bucket_id=''archivito-inc-private'' and s.name=b.path and (s.metadata->>''size'')::bigint=b.bytes)';
+begin
+ select prosrc into strict src from pg_proc where oid='public.sync_inc_step(uuid,text,jsonb,uuid,text)'::regprocedure;
+ if md5(src)<>'2ba9746fdc9d7ae955832f7c07bf1ead' then
+  raise exception 'unexpected sync_inc_step baseline prosrc';
+ end if;
+ patched:=replace(replace(src,p1,'archivito_inc_cert_candidate.object_matches(b.path,b.bytes)'),p2,'archivito_inc_cert_candidate.object_matches(b.path,b.bytes)');
+ if md5(patched)<>'d010b597b7cc21cae66b9fa09d01e3d0' then
+  raise exception 'unexpected sync_inc_step patched prosrc';
+ end if;
+ execute 'create or replace function public.sync_inc_step(p_actor uuid,p_action text,w jsonb,p_asset uuid default null,p_hash text default null) '
+      || 'returns jsonb language plpgsql security invoker set search_path='''' as $sync_inc_step_body$'
+      || patched || '$sync_inc_step_body$';
+end $e56_step$;
 
 -- Private helper; no service/client grant. It locks in the order shared with
 -- the legacy core and checks fresh authz. It grants no operation by itself.
@@ -78,8 +129,7 @@ begin
  -- Closed gate still rejects in the actual core RPC; this helper cannot open it.
  perform 1 from archivito_inc.gates where archive_id=p_archive for update;
  if not found then raise exception using errcode='42501',message='certification denied';end if;
- perform 1 from auth.sessions where id=p_session and user_id=p_actor and (not_after is null or not_after>clock_timestamp()) for share;
- if not found then raise exception using errcode='42501',message='certification session denied';end if;
+ perform archivito_inc_cert_candidate.lock_session(p_actor,p_session);
  select role into r from public.archive_members where archive_id=p_archive and user_id=p_actor for share;
  select key_fingerprint into k from public.archives where id=p_archive for share;
  if k is distinct from p_key or r is distinct from p_role
@@ -143,12 +193,27 @@ begin
  perform archivito_inc_cert_candidate.actor_guard(p_actor,p_session,p_archive);
  return result;
 end $$;
--- Owner assignment requires an administrative deployment review; lab runs as postgres.
-alter function archivito_inc_cert_candidate.dispatch(uuid,uuid,text,uuid,jsonb,uuid,uuid,uuid,text,bigint,uuid) owner to archivito_cert_executor;
+-- Set dispatch ACL while still owned by the deploying admin; ALTER FUNCTION OWNER
+-- preserves ACLs and updates the grantor automatically for non-superuser deploys.
 revoke all on function archivito_inc_cert_candidate.actor_guard(uuid,uuid,uuid) from public,anon,authenticated,service_role;
 grant execute on function archivito_inc_cert_candidate.actor_guard(uuid,uuid,uuid) to archivito_cert_executor;
 revoke all on function archivito_inc_cert_candidate.dispatch(uuid,uuid,text,uuid,jsonb,uuid,uuid,uuid,text,bigint,uuid) from public,anon,authenticated,service_role;
 grant execute on function archivito_inc_cert_candidate.dispatch(uuid,uuid,text,uuid,jsonb,uuid,uuid,uuid,text,bigint,uuid) to service_role;
+-- Non-superuser-compatible ownership transfer: grant minimal temporary CREATE
+-- on candidate schema and SET-capable membership, then revoke both immediately.
+grant create on schema archivito_inc_cert_candidate to archivito_cert_executor;
+do $e56_owner$
+declare admin_role text := current_user;
+begin
+ if not (select rolsuper from pg_roles where rolname=admin_role) then
+  execute format('grant archivito_cert_executor to %I with set true',admin_role);
+ end if;
+ alter function archivito_inc_cert_candidate.dispatch(uuid,uuid,text,uuid,jsonb,uuid,uuid,uuid,text,bigint,uuid) owner to archivito_cert_executor;
+ if not (select rolsuper from pg_roles where rolname=admin_role) then
+  execute format('revoke archivito_cert_executor from %I',admin_role);
+ end if;
+end $e56_owner$;
+revoke create on schema archivito_inc_cert_candidate from archivito_cert_executor;
 
 create function public.sync_inc_cert_http(
  p_actor uuid,p_session uuid,p_action text,p_archive uuid,p_wire jsonb default null,
