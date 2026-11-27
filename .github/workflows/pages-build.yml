@@ -1,0 +1,39 @@
+name: Cloudflare Pages — compilación estática (sin despliegue)
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  pages-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Preparar Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Instalar dependencias fijadas
+        run: npm ci --include=dev --ignore-scripts --no-audit --no-fund
+      - name: Compilar y comprobar archivos públicos
+        run: |
+          npm run build:pages
+          npm run test:pages
+          npm run test:auth
+          npm run test:crypto
+          npm run test:session-key
+          npm run test:sync-v3
+          npm run test:sync-incremental
+          npm run test:incremental-transport
+          npm run test:incremental-retention
+          npm run test:retention-approval
+          npm run test:incremental-wire
+          npm run test:incremental-service
+          npm run test:incremental-remote

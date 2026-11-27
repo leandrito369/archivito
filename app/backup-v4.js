@@ -40,7 +40,9 @@
         tx.oncomplete=()=>resolve();
         tx.onabort=()=>reject(tx.error||Error("La importación se canceló. Puede existir un ID duplicado. No se escribió nada."));
         tx.onerror=()=>reject(tx.error||Error("Falló la importación."));
-        try{records.forEach(r=>store.add(r));}
+        const stamp=typeof ArchivitoLocalGeneration==="object"&&typeof ArchivitoLocalGeneration.stamp==="function"
+          ?ArchivitoLocalGeneration.stamp:r=>r;
+        try{records.forEach(r=>store.add(stamp(r)));}
         catch(err){tx.abort();reject(err);}
       });
     }finally{db.close();}

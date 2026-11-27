@@ -1,0 +1,51 @@
+name: Certificación A/B/C — fixture aislado (sin red)
+on:
+  pull_request:
+    paths:
+      - 'docs/sql/cloud_03_5c3b3d4_closed_fixture_*.sql'
+      - 'tests/sql/cloud_03_5c3b3d4_closed_fixture_lab.sql'
+      - 'tests/remote/probe_incremental_fixture_login.py'
+      - '.github/workflows/incremental-cert-fixture.yml'
+permissions:
+  contents: read
+jobs:
+  fixture-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: fixture_lab
+        options: >-
+          --health-cmd "pg_isready -U postgres -d fixture_lab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Sintaxis del operador local (sin login)
+        run: python3 -m py_compile tests/remote/probe_incremental_fixture_login.py
+      - name: Aprovisionamiento y aislamiento en PostgreSQL desechable
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$PG_CONTAINER" mkdir -p /lab/docs/sql /lab/tests/sql
+          docker cp docs/sql/cloud_03_5c3b3d4_closed_fixture_provision.sql "$PG_CONTAINER:/lab/docs/sql/"
+          docker cp docs/sql/cloud_03_5c3b3d4_closed_fixture_verify.sql "$PG_CONTAINER:/lab/docs/sql/"
+          docker cp tests/sql/cloud_03_5c3b3d4_closed_fixture_lab.sql "$PG_CONTAINER:/lab/tests/sql/"
+          docker exec "$PG_CONTAINER" psql -X -U postgres -d fixture_lab -v ON_ERROR_STOP=1 -f /lab/tests/sql/cloud_03_5c3b3d4_closed_fixture_lab.sql
+          docker exec "$PG_CONTAINER" psql -X -U postgres -d fixture_lab -v ON_ERROR_STOP=1 -c "update auth.users set email_confirmed_at=null where email='archivito-cert-c@example.com';"
+          if docker exec "$PG_CONTAINER" psql -X -U postgres -d fixture_lab -v apply_closed_fixture=true -f /lab/docs/sql/cloud_03_5c3b3d4_closed_fixture_provision.sql > "$RUNNER_TEMP/negative.log" 2>&1; then
+            echo "FAIL unconfirmed fixture accepted"; exit 1
+          fi
+          grep -F 'STOP: three confirmed fixture accounts required' "$RUNNER_TEMP/negative.log"
+          docker exec "$PG_CONTAINER" psql -X -U postgres -d fixture_lab -v ON_ERROR_STOP=1 -c "update auth.users set email_confirmed_at=now() where email='archivito-cert-c@example.com'; insert into public.archive_members values('00000000-0000-4000-8000-000000000005','00000000-0000-4000-8000-000000000003','editor');"
+          if docker exec "$PG_CONTAINER" psql -X -U postgres -d fixture_lab -v apply_closed_fixture=true -f /lab/docs/sql/cloud_03_5c3b3d4_closed_fixture_provision.sql > "$RUNNER_TEMP/negative.log" 2>&1; then
+            echo "FAIL outsider membership accepted"; exit 1
+          fi
+          grep -F 'STOP: fixture account has out-of-scope membership' "$RUNNER_TEMP/negative.log"
+          echo 'PASS negative fixture checks'

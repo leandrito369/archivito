@@ -60,13 +60,14 @@
           resolve({
             target:{...target},title:r.title,pageIndex:index,totalPages:r.pages.length,
             expectedUpdatedAt:record.updatedAt??null,
+            expectedGeneration:root.ArchivitoLocalGeneration.generation(record),
             original:page[target.side]||null
           });
         };
       });
     } finally {db.close();}
   }
-  function save({target,expectedUpdatedAt,derived,crop,thumb,newBackOriginal=null}) {
+  function save({target,expectedUpdatedAt,expectedGeneration=null,derived,crop,thumb,newBackOriginal=null}) {
     if(!target||!["front","back"].includes(target.side))
       return Promise.reject(new Error("Destino de captura inválido."));
     if(!(derived instanceof Blob)||derived.type!=="image/png"||derived.size===0)
@@ -89,7 +90,7 @@
         try {
           if(!req.result){fail("La carta ya no existe.");return;}
           const current=req.result;
-          if((current.updatedAt??null)!==(expectedUpdatedAt??null)){
+          if((current.updatedAt??null)!==(expectedUpdatedAt??null)||root.ArchivitoLocalGeneration.generation(current)!==expectedGeneration){
             fail("Esta carta cambió en otra pestaña. Volvé a abrirla antes de digitalizar.");return;
           }
           const r=root.ArchivitoArchiveV3.normalize(current);
@@ -117,7 +118,7 @@
           }
           r.schemaVersion=3;
           r.updatedAt=new Date().toISOString();
-          store.put(r);
+          store.put(root.ArchivitoLocalGeneration.stamp(r));
         }catch(error){fail(error);}
       };
     }));

@@ -2,11 +2,28 @@
   "name": "archivito",
   "private": true,
   "version": "0.3.1",
-  "description": "Visor de cartas local-first; Three.js se instala en node_modules, sin CDN.",
+  "description": "Biblioteca de recuerdos local-first con visor Three.js; build estático para Cloudflare Pages.",
   "scripts": {
-    "test:paper": "node --test tests/test_paper_math.cjs"
+    "test:paper": "node --test tests/test_paper_math.cjs",
+    "build:pages": "node scripts/build-pages.mjs",
+    "test:pages": "node --test tests/test_pages_build.mjs",
+    "test:auth": "node --test tests/test_auth_access.mjs",
+    "test:crypto": "node --test tests/test_shared_crypto.mjs",
+    "test:session-key": "node --test tests/test_session_key.mjs",
+    "test:sync-v3": "node --test tests/test_sync_v3_contract.mjs",
+    "test:sync-incremental": "node --test tests/test_sync_incremental.mjs",
+    "test:incremental-transport": "node --test tests/test_sync_incremental_transport.mjs",
+    "test:incremental-retention": "node --test tests/test_sync_incremental_retention.mjs",
+    "test:retention-approval": "node --test tests/test_sync_retention_approval.mjs",
+    "test:incremental-wire": "node --test tests/test_sync_incremental_wire.mjs",
+    "test:incremental-service": "node --test tests/test_sync_incremental_service.mjs",
+    "test:incremental-remote": "node --test tests/test_sync_incremental_remote.mjs"
   },
   "dependencies": {
-    "three": "0.187.0"
+    "three": "0.187.0",
+    "@supabase/supabase-js": "2.119.2"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
   }
 }
