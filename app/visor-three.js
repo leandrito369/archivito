@@ -72,13 +72,17 @@ export function createThreeViewer(stage, {onFailure=()=>{}}={}) {
   async function textureFor(blob,placeholder) {
     const canvas=document.createElement("canvas"),ctx=canvas.getContext("2d");
     if(blob instanceof Blob) {
-      const bitmap=await createImageBitmap(blob);
-      try {
-        const s=Math.min(1,2048/Math.max(bitmap.width,bitmap.height));
-        canvas.width=Math.max(2,Math.round(bitmap.width*s));
-        canvas.height=Math.max(2,Math.round(bitmap.height*s));
-        ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
-      } finally{bitmap.close();}
+      if(globalThis.ArchivitoImageMobile?.drawOrientedCanvas) {
+        await globalThis.ArchivitoImageMobile.drawOrientedCanvas(blob,2048,canvas);
+      }else{
+        const bitmap=await createImageBitmap(blob);
+        try {
+          const s=Math.min(1,2048/Math.max(bitmap.width,bitmap.height));
+          canvas.width=Math.max(2,Math.round(bitmap.width*s));
+          canvas.height=Math.max(2,Math.round(bitmap.height*s));
+          ctx.drawImage(bitmap,0,0,canvas.width,canvas.height);
+        } finally{bitmap.close();}
+      }
     }else{
       canvas.width=800;canvas.height=1100;
       ctx.fillStyle="#edddc0";ctx.fillRect(0,0,800,1100);

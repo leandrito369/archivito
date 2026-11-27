@@ -35,6 +35,10 @@ function update(){
 }
 async function photoSize(blob){
  if(!blob)return {width:3,height:4};
+ if(typeof ArchivitoImageMobile==="object"&&typeof ArchivitoImageMobile.orientedSize==="function"){
+   const s=await ArchivitoImageMobile.orientedSize(blob);
+   return {width:s.width,height:s.height};
+ }
  const b=await createImageBitmap(blob);
  try{return {width:b.width,height:b.height};}finally{b.close();}
 }

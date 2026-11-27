@@ -116,6 +116,9 @@
   }
 
   async function thumbnail(file) {
+    if (typeof ArchivitoImageMobile === "object" && typeof ArchivitoImageMobile.createThumbnail === "function") {
+      return ArchivitoImageMobile.createThumbnail(file, 540, 0.78);
+    }
     const image = await createImageBitmap(file);
     try {
       const scale = Math.min(1, 540 / Math.max(image.width, image.height));

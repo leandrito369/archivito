@@ -25,7 +25,7 @@
     #webgl-stage{position:absolute;inset:0;width:100%;height:100%}
     .webgl-canvas{display:block;width:100%;height:100%;touch-action:none}
     .flat{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:28px}
-    .flat img{object-fit:contain;max-width:min(85%,640px);max-height:90%;background:#e9dac1;box-shadow:15px 21px 30px #0009}
+    .flat img{object-fit:contain;max-width:min(85%,640px);max-height:90%;image-orientation:from-image;background:#e9dac1;box-shadow:15px 21px 30px #0009}
     .noimage{display:none;padding:24px;background:#eddbbc;color:#513b28;text-align:center;border-radius:3px}
     .hint{position:absolute;bottom:15px;left:10px;right:10px;font-size:11px;letter-spacing:.08em;text-align:center;color:#d9bda4;pointer-events:none}
     .controls{background:#241e19;border-left:1px solid var(--line);padding:20px;display:flex;flex-direction:column;gap:22px}
@@ -109,6 +109,7 @@
   </main>
   <script src="./archive-v3.js"></script>
   <script src="./paper-math.js"></script>
+  <script src="./image-mobile.js"></script>
   <script src="./visor-3d-data.js"></script>
 </body>
 </html>
