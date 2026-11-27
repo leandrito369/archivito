@@ -207,23 +207,29 @@ class Lab:
         require(addr.version==4 and any(addr in ipaddress.ip_network(n) for n in ("10.0.0.0/8","172.16.0.0/12","192.168.0.0/16")),"nonprivate Edge address")
         self.edge_internal="http://"+str(addr)+":9000"
     def direct_edge(self,method="GET",origin=ORIGIN,extra=None):
-        # Runner-to-bridge traffic failed in lab #7. Execute the probe inside
-        # Kong's existing network namespace, bypassing the HTTP gateway.
+        # Runner-to-bridge traffic failed in lab #7 and Kong lacks curl in #8.
+        # Enter only Kong's network namespace, bypassing the HTTP gateway.
         # No JWT/key needed for the pre-auth GET/OPTIONS and origin cases.
         require(method in ("GET","OPTIONS"),"unexpected direct probe method")
         require(origin in (ORIGIN,"https://unauthorized.example"),"unexpected direct probe origin")
         headers={"Origin":origin,**(extra or {})}
         require(set(headers)<= {"Origin","Access-Control-Request-Method","Access-Control-Request-Headers"},"unexpected direct headers")
         kong="supabase_kong_"+self.project
-        available=self.docker("exec",kong,"sh","-c","command -v curl >/dev/null",allow_fail=True)
-        require(available.returncode==0,"Kong image curl unavailable")
-        args=["exec",kong,"curl","--silent","--show-error","--include","--http1.1",
+        # Kong 2.8.1 does not contain curl (run #8). Use the existing
+        # runner curl in only the disposable Kong network namespace.
+        # No new image, exposed port, container install or gateway changes.
+        pid=self.docker("inspect","--format","{{.State.Pid}}",kong).stdout.strip()
+        require(re.fullmatch(r"[1-9][0-9]{0,8}",pid) is not None and int(pid)>1,"invalid Kong PID")
+        require(Path("/proc/"+pid+"/ns/net").exists(),"Kong network namespace missing")
+        require(all(Path(p).is_file() for p in ("/usr/bin/sudo","/usr/bin/nsenter","/usr/bin/curl")),"runner probe tools unavailable")
+        args=["/usr/bin/sudo","-n","/usr/bin/nsenter","--net=/proc/"+pid+"/ns/net","--",
+              "/usr/bin/curl","--disable","--silent","--show-error","--include","--http1.1",
               "--noproxy","*","--connect-timeout","10","--max-time","30",
               "--max-filesize","1048576","--request",method]
         for key,value in headers.items():args+=["--header",key+": "+value]
         args+=["--url",self.edge_internal+"/"+FUNCTION+"?action=manifest"]
-        r=self.docker(*args,timeout=40,allow_fail=True)
-        print("EDGE_TRANSPORT "+json.dumps({"transport":"kong-network","method":method,
+        r=self.cmd(args,timeout=40,allow_fail=True)
+        print("EDGE_TRANSPORT "+json.dumps({"transport":"runner-curl-in-kong-netns","method":method,
             "curl_exit":r.returncode,"connected":r.returncode==0}),flush=True)
         require(r.returncode==0,"direct runtime transport failed")
         require(len(r.stdout)<=1048576,"oversized direct response")
