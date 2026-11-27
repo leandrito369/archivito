@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Archivito · Respaldo cifrado v4</title>
+  <style>
+    :root{color-scheme:dark;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#17120f;color:#f4e9d9}
+    *{box-sizing:border-box}
+    body{margin:0;background:radial-gradient(circle at 20% 0%,#393028,#17120f 60%);min-height:100vh}
+    main{width:min(900px,94vw);margin:0 auto;padding:38px 0}
+    h1{font:normal clamp(28px,4vw,42px) Georgia,serif;margin:16px 0}
+    h2{font:normal 24px Georgia,serif;margin:0 0 12px}
+    p{line-height:1.65;color:#c8b7a1}
+    .eyebrow{color:#dfad79;font-size:12px;text-transform:uppercase;letter-spacing:.15em}
+    .cards{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin:26px 0}
+    .card{background:#251e19;padding:21px;border:1px solid #594634;border-radius:17px}
+    label{display:block;font-size:13px;color:#e1cab1;margin:12px 0 5px}
+    input{font:inherit;width:100%;padding:10px;color:#f6edde;background:#18130f;border:1px solid #745b44;border-radius:9px}
+    button{font:inherit;cursor:pointer;width:100%;margin-top:18px;background:#bc976a;color:#18120c;padding:11px 13px;border:0;border-radius:10px;font-weight:700}
+    button:disabled{cursor:wait;opacity:.55}
+    a{color:#e9ca9f}
+    .warning{margin-top:22px;border:1px solid #8e6746;padding:15px;border-radius:12px;color:#ebcfb2;background:#30241b;font-size:13px;line-height:1.5}
+    .status{display:block;margin:16px 0;padding:13px;border:1px solid #5e513e;border-radius:10px;background:#251e19;font-size:13px;color:#d8c2aa;white-space:pre-wrap}
+    .status.error{border-color:#bd736e;color:#ffc2bd}
+    small{display:block;color:#b7a794;line-height:1.5;margin-top:8px}
+    [hidden]{display:none!important}
+    @media(max-width:720px){.cards{grid-template-columns:1fr}main{padding-top:22px}}
+  </style>
+</head>
+<body>
+ <main>
+  <div class="eyebrow">Archivito · Preservación 0.4A.1</div>
+  <h1>Respaldo privado cifrado</h1>
+  <p>Protegé una copia completa de tu biblioteca —fotografías originales, reversos, hojas, notas y versiones enderezadas— con una contraseña que sólo vos conocés. Todo se cifra y descifra en tu navegador, sin enviarse a Internet.</p>
+  <p><a href="./index.html">← Volver a la biblioteca</a></p>
+  <div class="cards">
+   <section class="card">
+    <h2>Exportar copia v4</h2>
+    <form id="export-form">
+      <label for="export-password">Frase de contraseña (mínimo 12 caracteres)</label>
+      <input type="password" id="export-password" autocomplete="new-password" minlength="12" required>
+      <label for="export-confirm">Repetir frase de contraseña</label>
+      <input type="password" id="export-confirm" autocomplete="new-password" minlength="12" required>
+      <button type="submit" id="export-button">Generar archivo cifrado</button>
+    </form>
+    <small>No se guarda la contraseña en Archivito. Conservá el respaldo y la clave de manera separada. Si perdés la clave, no podrás recuperar ese respaldo.</small>
+   </section>
+   <section class="card">
+    <h2>Restaurar copia v4</h2>
+    <form id="import-form">
+      <label for="backup-file">Seleccionar respaldo cifrado</label>
+      <input type="file" id="backup-file" accept=".archivito,.json,application/json" required>
+      <label for="import-password">Frase de contraseña del respaldo</label>
+      <input type="password" id="import-password" autocomplete="off" required>
+      <button type="submit" id="import-button">Verificar y restaurar</button>
+    </form>
+    <small>Si existe un recuerdo con el mismo ID, se cancela toda la importación: nunca reemplaza datos existentes sin autorización. Recomendamos restaurar en otro perfil de navegador.</small>
+   </section>
+  </div>
+  <output id="status" class="status" aria-live="polite">No se realizaron cambios. Usá un perfil de navegador diferente para probar una restauración sin arriesgar tu colección actual.</output>
+  <div class="warning"><strong>Antes de continuar:</strong> el archivo cifrado protege el contenido del respaldo, pero no reemplaza las fotografías físicas ni garantiza permanencia de IndexedDB. No compartas tu contraseña, copias sin cifrar ni cartas privadas por GitHub. Esta herramienta no implementa todavía sincronización ni una clave compartida entre dos personas.</div>
+ </main>
+ <script src="./archive-v3.js"></script>
+ <script src="./crypto-v4.js"></script>
+ <script src="./backup-v4.js"></script>
+</body>
+</html>
