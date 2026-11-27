@@ -201,11 +201,81 @@ class PromotionLab(Lab):
           notify pgrst,'reload schema';
           commit;""")
         passed("committed rollback SQL executed locally")
+    def restricted_bridge_probe(self,baseline):
+        # Disposable transaction only: emulate the relevant existing hosted
+        # privileges, not hosted platform ownership or a deployable candidate.
+        token,session=self.login("A")
+        try:
+            q=f"""begin;
+              create role e5_probe_admin nologin nosuperuser noinherit bypassrls;
+              create role e5_probe_executor nologin nosuperuser noinherit nobypassrls;
+              grant usage on schema auth,storage to e5_probe_admin;
+              grant select(id,user_id,not_after),update(id) on auth.sessions to e5_probe_admin;
+              grant select(bucket_id,name,metadata) on storage.objects to e5_probe_admin;
+              create schema e5_probe_private authorization e5_probe_admin;
+              set local role e5_probe_admin;
+              revoke all on schema e5_probe_private from public;
+              grant usage on schema e5_probe_private to e5_probe_executor;
+              create function e5_probe_private.lock_session(p_actor uuid,p_session uuid)
+              returns void language plpgsql security definer set search_path='' as $
+              begin
+                perform 1 from auth.sessions
+                  where id=p_session and user_id=p_actor and (not_after is null or not_after>clock_timestamp())
+                  for share;
+                if not found then raise exception using errcode='42501',message='certification session denied';end if;
+              end $;
+              create function e5_probe_private.object_matches(p_path text,p_size bigint)
+              returns boolean language sql security definer set search_path='' as $
+                select exists(select 1 from storage.objects where bucket_id='archivito-inc-private'
+                  and name=p_path and (metadata->>'size')::bigint=p_size);
+              $;
+              revoke all on all functions in schema e5_probe_private from public,anon,authenticated,service_role;
+              grant execute on function e5_probe_private.lock_session(uuid,uuid),e5_probe_private.object_matches(text,bigint) to e5_probe_executor;
+              reset role;
+              do $
+              begin
+                if (select rolsuper or not rolbypassrls from pg_roles where rolname='e5_probe_admin')
+                  or (select rolsuper or rolbypassrls or rolcanlogin from pg_roles where rolname='e5_probe_executor')
+                  or has_schema_privilege('e5_probe_admin','auth','USAGE WITH GRANT OPTION')
+                  or has_column_privilege('e5_probe_admin','auth.sessions','id','UPDATE WITH GRANT OPTION')
+                  or has_column_privilege('e5_probe_executor','auth.sessions','id','SELECT')
+                  or has_column_privilege('e5_probe_executor','auth.sessions','id','UPDATE')
+                  or has_column_privilege('e5_probe_executor','storage.objects','metadata','SELECT')
+                  or has_table_privilege('e5_probe_executor','storage.objects','INSERT,UPDATE,DELETE,TRUNCATE')
+                  or exists(select 1 from unnest(array['anon','authenticated','service_role']) r(role_name)
+                    where has_function_privilege(r.role_name,'e5_probe_private.lock_session(uuid,uuid)','EXECUTE')
+                       or has_function_privilege(r.role_name,'e5_probe_private.object_matches(text,bigint)','EXECUTE')
+                       or pg_has_role(r.role_name,'e5_probe_executor','MEMBER'))
+                then raise exception 'bridge ACL mismatch';end if;
+              end $;
+              set local role e5_probe_executor;
+              select e5_probe_private.lock_session({lit(self.users['A'])},{lit(session)});
+              do $
+              begin
+                begin
+                  perform e5_probe_private.lock_session({lit(self.users['B'])},{lit(session)});
+                  raise exception 'cross-actor session accepted';
+                exception when insufficient_privilege then
+                  if sqlerrm<>'certification session denied' then raise;end if;
+                end;
+                if e5_probe_private.object_matches('synthetic-absent',32)
+                then raise exception 'nonexistent object matched';end if;
+              end $;
+              rollback;"""
+            self.sql(q)
+            passed("restricted non-superuser private bridges: exact session lock, cross-actor denial, absent object, API ACL; transaction reverted")
+        finally:
+            status,_,_=self.request("/auth/v1/logout?scope=local",self.anon,token,{},method="POST")
+            require(status in (200,204),"bridge probe logout")
+        require(self.sql("""select to_regnamespace('e5_probe_private') is null
+          and not exists(select 1 from pg_roles where rolname in ('e5_probe_admin','e5_probe_executor'));""")=="t","bridge probe objects remain")
+        self.legacy_state(baseline)
     def probe(self):
         self.cors_isolation()
         baseline=self.snapshot()
         self.legacy_state(baseline)
         self.phase_probes("BASELINE",False)
+        self.restricted_bridge_probe(baseline)
         # Force a transaction failure after candidate SQL but before commit.
         r=self.sql("begin;\n"+self.candidate_source()+"\nselect 1/0;\ncommit;",allow_fail=True)
         require(r.returncode!=0 and "division by zero" in r.stderr,"injected promotion failure not reached")
