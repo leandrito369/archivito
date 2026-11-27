@@ -4,13 +4,12 @@ No hosted deployment, no gate opening, no same-slug rollout simulation claim.
 import json
 import os
 from pathlib import Path
-import secrets
 import tempfile
 import time
 
 from test_supabase_local_closed_stack import (
     Lab, ROOT, SOURCES, SC, ARCHIVE, MEMORY, KEY, BUCKET, FUNCTION, ORIGIN,
-    Stop, require, passed, lit, uid
+    Stop, require, passed, lit
 )
 
 LEGACY=FUNCTION+"-legacy-lab"
@@ -26,58 +25,16 @@ class PromotionLab(Lab):
         super().configure()
         target=self.work/"supabase/functions"/LEGACY/"index.ts"
         target.parent.mkdir()
-        source=(ROOT/"tests/remote/fixtures/edge_v1_legacy.ts").read_text()
+        # Immutable historical source, no duplicated handler and no network fetch.
+        legacy_sha="3e3f7eaf501f5f1252f549203cc6c96f4eadc572"
+        path="supabase/functions/"+FUNCTION+"/index.ts"
+        source=self.cmd(["git","-C",str(ROOT),"show",legacy_sha+":"+path]).stdout
         old="../../../server/sync-incremental-service.mjs"
         require(source.count(old)==1,"legacy import anchor")
         target.write_text(source.replace(old,"../_shared/archivito/server/sync-incremental-service.mjs"))
         conf=self.work/"supabase/config.toml"
         with conf.open("a") as out:out.write("\n[functions."+LEGACY+"]\nverify_jwt = false\n")
         passed("legacy and candidate Edge packages staged in distinct local slots")
-    def provision_legacy(self):
-        require(self.sql("select to_regnamespace('archivito_inc') is null and to_regclass('public.archives') is null and (select count(*) from auth.users)=0;")=="t","nonempty local database")
-        self.sql("""
-          begin;
-          create table public.archives(
-           id uuid primary key,created_at timestamptz not null default now(),
-           schema_version integer not null default 1 check(schema_version=1),
-           key_fingerprint text check(key_fingerprint ~ '^[0-9a-f]{64}$'));
-          create table public.archive_members(
-           archive_id uuid not null references public.archives(id) on delete restrict,
-           user_id uuid not null references auth.users(id) on delete cascade,
-           role text not null check(role in ('owner','editor')),
-           created_at timestamptz not null default now(),
-           primary key(archive_id,user_id),unique(archive_id,role));
-          alter table public.archives enable row level security;
-          alter table public.archive_members enable row level security;
-          revoke all on public.archives,public.archive_members from public,anon,authenticated,service_role;
-          grant select on public.archives,public.archive_members to authenticated;
-          create policy archive_members_read_self on public.archive_members for select to authenticated using(user_id=(select auth.uid()));
-          create policy archives_read_member on public.archives for select to authenticated using(exists(select 1 from public.archive_members m where m.archive_id=id and m.user_id=(select auth.uid())));
-          commit;
-        """)
-        self.users={}
-        self.passwords={}
-        for label in "ABC":
-            email=f"archivito-e3-{label.lower()}@example.com"
-            password="Aa1!"+secrets.token_urlsafe(32)
-            status,_,d=self.request("/auth/v1/admin/users",self.service,self.service,
-                       {"email":email,"password":password,"email_confirm":True})
-            require(status in (200,201) and isinstance(d,dict) and d.get("email")==email,"local Auth admin user "+label)
-            self.users[label]=uid(d["id"]);self.passwords[label]=password
-        a,b=(lit(self.users[k]) for k in "AB")
-        ar=lit(ARCHIVE);k=lit(KEY)
-        # Only the two installed legacy SQL sources applied unchanged to
-        # newly created local managed relations. Never DROP the hard constraint.
-        scripts="\n".join((ROOT/"docs/sql"/n).read_text() for n in SOURCES[:2])
-        self.sql("begin;\n"+scripts+f"""
-          insert into public.archives(id,key_fingerprint) values({ar},{k});
-          insert into public.archive_members(archive_id,user_id,role) values({ar},{a},'owner'),({ar},{b},'editor');
-          insert into archivito_inc.gates(archive_id,enabled,quota_bytes) values({ar},false,67108864);
-          notify pgrst,'reload schema';
-          commit;
-        """)
-        passed("legacy SQL and synthetic managed fixtures installed locally")
-
     def invariant(self,sessions):
         require(self.sql(f"""select
           (select count(*) from auth.users)=3 and (select count(*) from auth.sessions)={sessions}
@@ -276,7 +233,7 @@ def main():
         try:
             lab.configure()
             lab.start()
-            lab.provision_legacy()
+            lab.provision(candidate=False)
             lab.probe()
         finally:
             lab.stop()
