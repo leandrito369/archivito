@@ -33,6 +33,14 @@ py -m http.server 8000 --bind 127.0.0.1
 
 Entrá a la biblioteca, abrí una carta y seleccioná **Abrir visor 3D**. Three.js se carga desde `node_modules` local; **no se utiliza CDN** para cargar fotografías ni bibliotecas al visualizar cartas. Si falta Three.js o WebGL, la pantalla ofrece una **vista 2D**. Se conserva el visor de siempre.
 
+## Acceso remoto compartido — Cloudflare Pages + Supabase Free (propuesto)
+
+Se adoptó **Cloudflare Pages Free + Supabase Free**, para que dos personas puedan iniciar sesión con sus cuentas Google y compartir una biblioteca privada por HTTPS. **Aún no hay URL publicada ni sincronización activa**. Antes de subir fotos, se verificarán RLS, Storage privado, cifrado en el navegador y recuperación de claves.
+
+- [ADR-0003: Cloudflare Pages + Supabase Free](docs/decisiones/ADR-0003-cloudflare-supabase.md)
+- [Plan de despliegue y sincronización](docs/PLAN_ACCESO_WEB_COMPARTIDO.md)
+- [ADR-0002: Firebase — sustituida](docs/decisiones/ADR-0002-acceso-web-compartido.md)
+
 ## Documentación
 
 - [Uso de la app, digitalizador y visor](app/README.md)

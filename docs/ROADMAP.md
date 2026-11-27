@@ -55,6 +55,12 @@
 - Transcripción manuscrita manual (OCR opcional no confiable).
 - Verificar recuperación de respaldos grandes.
 
+## Actualización de arquitectura — Cloudflare Pages + Supabase Free (22/11/2026)
+
+La decisión actual es **Cloudflare Pages Free (frontend HTTPS) + Supabase Free (Google Auth, PostgreSQL, Storage privado, Realtime)**. Sustituye el plan Firebase anterior. El usuario requiere acceso desde cualquier dispositivo para dos personas, con originales y derivados cifrados antes de subir; no está implementado todavía.
+
+Ver [Plan de acceso web compartido](PLAN_ACCESO_WEB_COMPARTIDO.md) y [ADR-0003](decisiones/ADR-0003-cloudflare-supabase.md). Se mantienen las prioridades de 0.4A.1 (respaldo cifrado v4) y #13–#16 (hosting/auth, clave, sincronización, PWA).
+
 ## Iteración 4 — 1.0: biblioteca compartida
 
 - Diseño de amenaza y protección de claves; autenticación y autorización.
