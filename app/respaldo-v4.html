@@ -22,7 +22,7 @@
     button:disabled{cursor:wait;opacity:.55}
     a{color:#e9ca9f}
     .warning{margin-top:22px;border:1px solid #8e6746;padding:15px;border-radius:12px;color:#ebcfb2;background:#30241b;font-size:13px;line-height:1.5}
-    .status{margin:16px 0;padding:13px;border:1px solid #5e513e;border-radius:10px;background:#251e19;font-size:13px;color:#d8c2aa;white-space:pre-wrap}
+    .status{display:block;margin:16px 0;padding:13px;border:1px solid #5e513e;border-radius:10px;background:#251e19;font-size:13px;color:#d8c2aa;white-space:pre-wrap}
     .status.error{border-color:#bd736e;color:#ffc2bd}
     small{display:block;color:#b7a794;line-height:1.5;margin-top:8px}
     [hidden]{display:none!important}
@@ -59,7 +59,7 @@
     <small>Si existe un recuerdo con el mismo ID, se cancela toda la importación: nunca reemplaza datos existentes sin autorización. Recomendamos restaurar en otro perfil de navegador.</small>
    </section>
   </div>
-  <div id="status" class="status" aria-live="polite" role="status">No se realizaron cambios. Usá un perfil de navegador diferente para probar una restauración sin arriesgar tu colección actual.</div>
+  <output id="status" class="status" aria-live="polite">No se realizaron cambios. Usá un perfil de navegador diferente para probar una restauración sin arriesgar tu colección actual.</output>
   <div class="warning"><strong>Antes de continuar:</strong> el archivo cifrado protege el contenido del respaldo, pero no reemplaza las fotografías físicas ni garantiza permanencia de IndexedDB. No compartas tu contraseña, copias sin cifrar ni cartas privadas por GitHub. Esta herramienta no implementa todavía sincronización ni una clave compartida entre dos personas.</div>
  </main>
  <script src="./archive-v3.js"></script>

@@ -132,15 +132,27 @@ class BackupEncryptedTests(unittest.TestCase):
             expect(second.locator("#import-password")).to_have_value("")
             self.assertEqual(
                 second.evaluate("""async()=>{
+                  if(typeof indexedDB.databases==='function'){
+                    const dbs=await indexedDB.databases();
+                    if(!dbs.some(d=>d.name==='nuestro-archivo-cartas-v1'))return 0;
+                  }
                   const q=indexedDB.open('nuestro-archivo-cartas-v1',1);
                   return new Promise((res,rej)=>{
+                    q.onupgradeneeded=()=>{
+                      if(!q.result.objectStoreNames.contains('letters'))
+                        q.result.createObjectStore('letters',{keyPath:'id'});
+                    };
                     q.onsuccess=()=>{
-                      const tx=q.result.transaction('letters','readonly');
-                      const x=tx.objectStore('letters').count();
-                      x.onsuccess=()=>{res(x.result);q.result.close();};
-                      x.onerror=()=>rej(x.error);
+                      try{
+                        const db=q.result;
+                        const tx=db.transaction('letters','readonly');
+                        const x=tx.objectStore('letters').count();
+                        x.onsuccess=()=>{res(x.result);db.close();};
+                        x.onerror=()=>{db.close();rej(x.error);};
+                      }catch(err){q.result?.close();rej(err);}
                     };
                     q.onerror=()=>rej(q.error);
+                    q.onblocked=()=>rej(Error('IndexedDB blocked'));
                   });
                 }"""),0)
 
