@@ -217,22 +217,22 @@ class PromotionLab(Lab):
               revoke all on schema e5_probe_private from public;
               grant usage on schema e5_probe_private to e5_probe_executor;
               create function e5_probe_private.lock_session(p_actor uuid,p_session uuid)
-              returns void language plpgsql security definer set search_path='' as $
+              returns void language plpgsql security definer set search_path='' as $e5_bridge$
               begin
                 perform 1 from auth.sessions
                   where id=p_session and user_id=p_actor and (not_after is null or not_after>clock_timestamp())
                   for share;
                 if not found then raise exception using errcode='42501',message='certification session denied';end if;
-              end $;
+              end $e5_bridge$;
               create function e5_probe_private.object_matches(p_path text,p_size bigint)
-              returns boolean language sql security definer set search_path='' as $
+              returns boolean language sql security definer set search_path='' as $e5_bridge$
                 select exists(select 1 from storage.objects where bucket_id='archivito-inc-private'
                   and name=p_path and (metadata->>'size')::bigint=p_size);
-              $;
+              $e5_bridge$;
               revoke all on all functions in schema e5_probe_private from public,anon,authenticated,service_role;
               grant execute on function e5_probe_private.lock_session(uuid,uuid),e5_probe_private.object_matches(text,bigint) to e5_probe_executor;
               reset role;
-              do $
+              do $e5_bridge$
               begin
                 if (select rolsuper or not rolbypassrls from pg_roles where rolname='e5_probe_admin')
                   or (select rolsuper or rolbypassrls or rolcanlogin from pg_roles where rolname='e5_probe_executor')
@@ -247,10 +247,10 @@ class PromotionLab(Lab):
                        or has_function_privilege(r.role_name,'e5_probe_private.object_matches(text,bigint)','EXECUTE')
                        or pg_has_role(r.role_name,'e5_probe_executor','MEMBER'))
                 then raise exception 'bridge ACL mismatch';end if;
-              end $;
+              end $e5_bridge$;
               set local role e5_probe_executor;
               select e5_probe_private.lock_session({lit(self.users['A'])},{lit(session)});
-              do $
+              do $e5_bridge$
               begin
                 begin
                   perform e5_probe_private.lock_session({lit(self.users['B'])},{lit(session)});
@@ -260,7 +260,7 @@ class PromotionLab(Lab):
                 end;
                 if e5_probe_private.object_matches('synthetic-absent',32)
                 then raise exception 'nonexistent object matched';end if;
-              end $;
+              end $e5_bridge$;
               rollback;"""
             self.sql(q)
             passed("restricted non-superuser private bridges: exact session lock, cross-actor denial, absent object, API ACL; transaction reverted")
