@@ -5,6 +5,7 @@ database access only by docker exec into a uniquely named newly created containe
 """
 import base64
 import json
+from email.parser import Parser
 import ipaddress
 import yaml
 import os
@@ -173,14 +174,13 @@ class Lab:
         require(self.sql("select rolsuper from pg_roles where rolname=current_user;")=="t","local admin not superuser")
         print("POSTGRES "+self.sql("show server_version;"),flush=True)
         passed("real Supabase services running")
-    def request(self,path,key,token=None,body=None,method=None,extra=None,*,base=API):
+    def request(self,path,key,token=None,body=None,method=None,extra=None):
         require(path.startswith("/") and not path.startswith("//"),"invalid path")
         h={"apikey":key,"Content-Type":"application/json"}
         if token is not None:h["Authorization"]="Bearer "+token
         h.update(extra or {})
         data=None if body is None else (body if isinstance(body,bytes) else json.dumps(body).encode())
-        require(base==API or base==getattr(self,'edge_internal',None),'unapproved API base')
-        req=urllib.request.Request(base+path,data=data,headers=h,method=method)
+        req=urllib.request.Request(API+path,data=data,headers=h,method=method)
         try:r=OPENER.open(req,timeout=30)
         except urllib.error.HTTPError as e:r=e
         with r:
@@ -207,8 +207,35 @@ class Lab:
         require(addr.version==4 and any(addr in ipaddress.ip_network(n) for n in ("10.0.0.0/8","172.16.0.0/12","192.168.0.0/16")),"nonprivate Edge address")
         self.edge_internal="http://"+str(addr)+":9000"
     def direct_edge(self,method="GET",origin=ORIGIN,extra=None):
-        return self.request("/"+FUNCTION+"?action=manifest",self.anon,self.anon,
-                            method=method,extra={"Origin":origin,**(extra or {})},base=self.edge_internal)
+        # Runner-to-bridge traffic failed in lab #7. Execute the probe inside
+        # Kong's existing network namespace, bypassing the HTTP gateway.
+        # No JWT/key needed for the pre-auth GET/OPTIONS and origin cases.
+        require(method in ("GET","OPTIONS"),"unexpected direct probe method")
+        require(origin in (ORIGIN,"https://unauthorized.example"),"unexpected direct probe origin")
+        headers={"Origin":origin,**(extra or {})}
+        require(set(headers)<= {"Origin","Access-Control-Request-Method","Access-Control-Request-Headers"},"unexpected direct headers")
+        kong="supabase_kong_"+self.project
+        available=self.docker("exec",kong,"sh","-c","command -v curl >/dev/null",allow_fail=True)
+        require(available.returncode==0,"Kong image curl unavailable")
+        args=["exec",kong,"curl","--silent","--show-error","--include","--http1.1",
+              "--noproxy","*","--connect-timeout","10","--max-time","30",
+              "--max-filesize","1048576","--request",method]
+        for key,value in headers.items():args+=["--header",key+": "+value]
+        args+=["--url",self.edge_internal+"/"+FUNCTION+"?action=manifest"]
+        r=self.docker(*args,timeout=40,allow_fail=True)
+        print("EDGE_TRANSPORT "+json.dumps({"transport":"kong-network","method":method,
+            "curl_exit":r.returncode,"connected":r.returncode==0}),flush=True)
+        require(r.returncode==0,"direct runtime transport failed")
+        require(len(r.stdout)<=1048576,"oversized direct response")
+        head,sep,body=r.stdout.partition("\n\n")
+        require(bool(sep),"missing direct HTTP headers")
+        status_line,_,raw_headers=head.partition("\n")
+        match=re.fullmatch(r"HTTP/1\.[01] ([1-5][0-9]{2})(?: .*)?",status_line)
+        require(match is not None,"invalid direct HTTP status")
+        h=Parser().parsestr(raw_headers+"\n\n")
+        try:d=json.loads(body)
+        except ValueError:d=None
+        return int(match.group(1)),h,d
     def kong_config(self):
         # Declarative config can contain local secrets; capture in memory, never log.
         r=self.docker("exec","supabase_kong_"+self.project,"sh","-c",
@@ -232,8 +259,8 @@ class Lab:
         return found
     def cors_isolation(self):
         self.internal_edge()
-        direct=self.direct_edge()
         gateway=self.edge(self.anon,method="GET")
+        direct=self.direct_edge()
         for layer,(status,h,d) in (("runtime",direct),("kong",gateway)):
             print("CORS_LAYER "+json.dumps({"layer":layer,"status":status,
                   "generic":d=={"error":"rejected"},"origins_exact":h.get_all("Access-Control-Allow-Origin")==[ORIGIN],
