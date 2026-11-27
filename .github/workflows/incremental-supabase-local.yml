@@ -19,10 +19,10 @@ jobs:
     env:
       ARCHIVITO_DISPOSABLE_LAB: supabase-e3
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - uses: supabase/setup-cli@v3
+      - uses: supabase/setup-cli@689adcfb80d947100a1eab127289b97d1fb07b13 # v3
         with:
           version: 2.122.0
       - name: Verify CLI, Docker and Python
