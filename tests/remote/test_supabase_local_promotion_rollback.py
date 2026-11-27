@@ -173,7 +173,12 @@ class PromotionLab(Lab):
                 else:
                     status,_,d=self.rpc("sync_inc_cert_http",self.service,self.service,
                       {"p_actor":self.users[label],"p_session":session,"p_action":"head","p_archive":ARCHIVE,"p_memory":MEMORY})
-                    require(status==404 and isinstance(d,dict) and d.get("code")=="PGRST202","candidate RPC absent")
+                    for _ in range(20):
+                        if status==404 and isinstance(d,dict) and d.get("code")=="PGRST202":break
+                        time.sleep(1)
+                        status,_,d=self.rpc("sync_inc_cert_http",self.service,self.service,
+                          {"p_actor":self.users[label],"p_session":session,"p_action":"head","p_archive":ARCHIVE,"p_memory":MEMORY})
+                    else:raise Stop("candidate RPC absent after schema reload")
                 # Both bundles must fail closed in every intermediate state.
                 for slug in (LEGACY,FUNCTION):
                     self.check_edge(name+" "+slug+" "+label,*self.slot(slug,token),403)
@@ -191,6 +196,8 @@ class PromotionLab(Lab):
           notify pgrst,'reload schema';
           commit;""")
         self.audit(0)
+        # Confirm no legacy API role has effective column UPDATE access, not merely no schema USAGE.
+        require(self.sql("""select not exists(select 1 from pg_class c join pg_namespace n on n.oid=c.relnamespace where n.nspname='archivito_inc' and c.relkind='r' and has_any_column_privilege('service_role',c.oid,'UPDATE'));""")=="t","residual legacy column UPDATE ACL")
         passed("candidate SQL committed locally with closed window and ACL")
     def rollback(self):
         self.audit(0)
